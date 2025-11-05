@@ -408,7 +408,7 @@ function buildMealIndex(ss) {
   const idDisplay = sourceSheet
     .getRange(2, idCol + 1, sourceSheet.getLastRow() - 1, 1)
     .getDisplayValues()
-    .map(r => (r[0] || '').toString().replace(/\D/g, ''));
+    .map(r => (r[0] || '').toString().trim());
 
   const mealHistory = buildMealHistory(ss);
 
@@ -424,10 +424,15 @@ function buildMealIndex(ss) {
     const row = values[i];
     const email = normalizeEmail(row[emailCol]);
     const mealName = String(row[mealCol] || '').trim();
-    const submissionId = idDisplay[i];
+    const submissionId = idDisplay[i].replace(/\D/g, '');
 
-    if (!email || !mealName || !submissionId) {
-      Logger.log(`⚠️  Row ${i + 2}: Skipping - missing email, meal name, or submission ID`);
+    if (!submissionId) {
+      Logger.log(`⚠️  Row ${i + 2}: missing Submission ID display text`);
+      continue;
+    }
+
+    if (!email || !mealName) {
+      Logger.log(`⚠️  Row ${i + 2}: Skipping - missing email or meal name`);
       continue;
     }
 
