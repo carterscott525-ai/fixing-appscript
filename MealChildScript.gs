@@ -331,14 +331,14 @@ function runMealSync() {
   getTimezones();
 
   const mealIndex = buildMealIndex(ss);
-  Logger.log(`\nIndexed ${mealIndex.totalCount} meals from ${mealIndex.emailCount} clients`);
+  Logger.log(`\nIndexed ${mealIndex.totalCount} meals by submission ID`);
 
   if (mealIndex.errors > 0) {
     Logger.log(`⚠️  ${mealIndex.errors} rows had invalid timestamps and were skipped`);
   }
 
   const matchResults = scanDriveAndMatch(ss, mealIndex.data);
-  Logger.log(`\nMatching: ${matchResults.matched} matched, ${matchResults.unmatched} unmatched`);
+  Logger.log(`\nMatching: ${matchResults.matched} matched, ${matchResults.unmatched} unmatched (${matchResults.noSubmissionId} missing submission ID in filename)`);
 
   if (matchResults.matchedRows.length > 0) {
     const transferred = transferToCoachMaster(matchResults.matchedRows);
@@ -353,13 +353,13 @@ function runMealSync() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// BUILD MEAL INDEX WITH AUTO-FILL
+// BUILD MEAL INDEX WITH AUTO-FILL - INDEXED BY SUBMISSION ID
 // ═══════════════════════════════════════════════════════════════════════
 
 function buildMealIndex(ss) {
   const sourceSheet = ss.getSheetByName(MEAL_INFO_SOURCE);
   if (!sourceSheet || sourceSheet.getLastRow() <= 1) {
-    return { data: new Map(), totalCount: 0, emailCount: 0, errors: 0 };
+    return { data: new Map(), totalCount: 0, errors: 0 };
   }
 
   // Get spreadsheet timezone for correct timestamp parsing
@@ -390,21 +390,23 @@ function buildMealIndex(ss) {
   // Need either a timestamp column OR both date and time columns
   const hasTimestamp = timestampCol !== -1 || (dateCol !== -1 && timeCol !== -1);
 
-  if (emailCol === -1 || mealCol === -1 || !hasTimestamp) {
+  if (emailCol === -1 || mealCol === -1 || !hasTimestamp || idCol === -1) {
     Logger.log('ERROR: Required columns not found');
     Logger.log(`  Email column: ${emailCol === -1 ? 'MISSING' : 'Found'}`);
     Logger.log(`  Meal column: ${mealCol === -1 ? 'MISSING' : 'Found'}`);
+    Logger.log(`  Submission ID column: ${idCol === -1 ? 'MISSING' : 'Found'}`);
     if (timestampCol !== -1) {
       Logger.log(`  Timestamp column: Found`);
     } else {
       Logger.log(`  Date column: ${dateCol === -1 ? 'MISSING' : 'Found'}`);
       Logger.log(`  Time column: ${timeCol === -1 ? 'MISSING' : 'Found'}`);
     }
-    return { data: new Map(), totalCount: 0, emailCount: 0, errors: 0 };
+    return { data: new Map(), totalCount: 0, errors: 0 };
   }
 
   const mealHistory = buildMealHistory(ss);
 
+  // NEW: Index by submission ID instead of by email
   const index = new Map();
   let totalCount = 0;
   let autoFillCount = 0;
@@ -416,9 +418,10 @@ function buildMealIndex(ss) {
     const row = values[i];
     const email = normalizeEmail(row[emailCol]);
     const mealName = String(row[mealCol] || '').trim();
+    const submissionId = String(row[idCol] || '').trim();
 
-    if (!email || !mealName) {
-      Logger.log(`⚠️  Row ${i + 2}: Skipping - missing email or meal name`);
+    if (!email || !mealName || !submissionId) {
+      Logger.log(`⚠️  Row ${i + 2}: Skipping - missing email, meal name, or submission ID`);
       continue;
     }
 
@@ -474,7 +477,7 @@ function buildMealIndex(ss) {
       }
     }
 
-    // CRITICAL FIX: Use robust parseTimestamp function with spreadsheet timezone
+    // Parse timestamp
     const submissionTime = parseTimestamp(timeValue, spreadsheetTZ);
 
     if (!submissionTime) {
@@ -483,16 +486,7 @@ function buildMealIndex(ss) {
       continue;
     }
 
-    // Normalize to milliseconds for timezone-independent comparison
-    const submissionTimeMs = normalizeToSpreadsheetTime(submissionTime);
-
-    if (submissionTimeMs === null) {
-      Logger.log(`⚠️  Row ${i + 2}: Failed to normalize timestamp`);
-      errorCount++;
-      continue;
-    }
-
-    Logger.log(`  📝 Row ${i + 2}: "${mealName}" at ${formatDateForLog(submissionTime)}`);
+    Logger.log(`  📝 Row ${i + 2}: "${mealName}" (ID: ${submissionId}) at ${formatDateForLog(submissionTime)}`);
 
     let coreIngredients = coreCol !== -1 ? String(row[coreCol] || '').trim() : '';
     let addedIngredients = addedCol !== -1 ? String(row[addedCol] || '').trim() : '';
@@ -513,44 +507,30 @@ function buildMealIndex(ss) {
       }
     }
 
-    if (!index.has(email)) {
-      index.set(email, []);
-    }
-
-    index.get(email).push({
+    // NEW: Store by submission ID (not by email)
+    index.set(submissionId, {
+      email: email,
       submissionTime: submissionTime,
-      submissionTimeMs: submissionTimeMs,
       mealName: mealName,
       coreIngredients: coreIngredients,
       addedIngredients: addedIngredients,
       cookingMethod: cookingMethod,
       portions: portions,
-      submissionId: idCol !== -1 ? String(row[idCol] || '').trim() : ''
+      submissionId: submissionId
     });
 
     totalCount++;
-  }
-
-  // Sort by timestamp (oldest first)
-  for (const [email, meals] of index.entries()) {
-    meals.sort((a, b) => a.submissionTimeMs - b.submissionTimeMs);
-    Logger.log(`\n📧 ${email}: ${meals.length} submissions indexed`);
-
-    // Log first few timestamps for debugging
-    Logger.log(`  Meal timestamps (first 3):`);
-    for (let i = 0; i < Math.min(3, meals.length); i++) {
-      Logger.log(`    ${i + 1}. ${meals[i].mealName} - ${formatDateForLog(meals[i].submissionTime)}`);
-    }
   }
 
   if (autoFillCount > 0) {
     Logger.log(`\n✓ Auto-filled ${autoFillCount} meals from history!`);
   }
 
+  Logger.log(`\n✓ Indexed ${totalCount} meals by submission ID`);
+
   return {
     data: index,
     totalCount: totalCount,
-    emailCount: index.size,
     errors: errorCount
   };
 }
@@ -601,7 +581,7 @@ function lookupPreviousMeal(mealHistory, email, mealName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SCAN DRIVE AND MATCH - WITH TIMEZONE FIX
+// SCAN DRIVE AND MATCH - BY SUBMISSION ID
 // ═══════════════════════════════════════════════════════════════════════
 
 function scanDriveAndMatch(ss, mealIndex) {
@@ -618,97 +598,84 @@ function scanDriveAndMatch(ss, mealIndex) {
   const matchedRows = [];
   let matchedCount = 0;
   let unmatchedCount = 0;
+  let noSubmissionIdCount = 0;
 
   try {
+    // NEW: Get all images from the root folder (not subfolders by email)
     const rootFolder = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME).next();
-    const clientFolders = rootFolder.getFolders();
+    const files = rootFolder.getFiles();
 
-    while (clientFolders.hasNext()) {
-      const clientFolder = clientFolders.next();
-      const email = normalizeEmail(extractEmailFromFolderName(clientFolder.getName()));
+    Logger.log(`\n📸 Scanning images in "${DRIVE_FOLDER_NAME}"...`);
 
-      if (!email) {
-        Logger.log(`⚠️  Skipping folder (no email found): ${clientFolder.getName()}`);
+    let totalImages = 0;
+
+    while (files.hasNext()) {
+      const file = files.next();
+
+      // Only process image files
+      if (!file.getMimeType().startsWith('image/')) {
         continue;
       }
 
-      const clientMeals = mealIndex.get(email) || [];
-      const usedMealIndices = new Set();
+      totalImages++;
+      const url = file.getUrl();
+      const filename = file.getName();
 
-      // Collect all images
-      const allImages = [];
-      const files = clientFolder.getFiles();
-      while (files.hasNext()) {
-        const file = files.next();
-        if (file.getMimeType().startsWith('image/')) {
-          allImages.push(file);
-        }
+      // Skip if already processed
+      if (existingImages.has(url)) {
+        Logger.log(`  ⏭️  Skipping (already processed): ${filename}`);
+        continue;
       }
 
-      const subfolders = clientFolder.getFolders();
-      while (subfolders.hasNext()) {
-        const subfolder = subfolders.next();
-        const subFiles = subfolder.getFiles();
-        while (subFiles.hasNext()) {
-          const file = subFiles.next();
-          if (file.getMimeType().startsWith('image/')) {
-            allImages.push(file);
-          }
-        }
-      }
+      // NEW: Extract submission ID from filename
+      // Expected format: 638138601111319674.jpg
+      // Extract just the number before the file extension
+      const submissionId = extractSubmissionIdFromFilename(filename);
 
-      // Sort images by modification time (oldest first)
-      allImages.sort((a, b) => a.getLastUpdated().getTime() - b.getLastUpdated().getTime());
+      if (!submissionId) {
+        Logger.log(`\n  🖼️  Image: ${filename}`);
+        Logger.log(`     ❌ NO MATCH (cannot extract submission ID from filename)`);
+        noSubmissionIdCount++;
+        unmatchedCount++;
 
-      Logger.log(`  Image timestamps (first 3):`);
-      for (let i = 0; i < Math.min(3, allImages.length); i++) {
-        Logger.log(`    ${i + 1}. ${formatDateForLog(allImages[i].getLastUpdated())}`);
-      }
-
-      Logger.log(`\n📸 Processing ${allImages.length} images for ${email}`);
-
-      // CRITICAL FIX: Match images and meals sequentially (in chronological order)
-      // Both are sorted oldest-first, so 1st image pairs with 1st meal, 2nd with 2nd, etc.
-      let nextMealIndex = 0;
-
-      for (const file of allImages) {
-        const url = file.getUrl();
-        if (existingImages.has(url)) continue;
-
-        // Drive timestamps are always in UTC, convert to our comparison format
+        // Still add to sheet with no match
         const fileTime = file.getLastUpdated();
-        const fileTimeMs = normalizeToSpreadsheetTime(fileTime);
+        const row = createMealRow('', url, fileTime, null);
+        destSheet.appendRow(row);
+        existingImages.add(url);
+        continue;
+      }
 
-        if (fileTimeMs === null) {
-          Logger.log(`  ⚠️  Invalid file timestamp for: ${file.getName()}`);
-          continue;
-        }
+      // NEW: Look up meal by submission ID
+      const meal = mealIndex.get(submissionId);
 
-        Logger.log(`\n  🖼️  Image: ${file.getName()}`);
-        Logger.log(`     Modified: ${formatDateForLog(fileTime)}`);
+      Logger.log(`\n  🖼️  Image: ${filename}`);
+      Logger.log(`     Submission ID: ${submissionId}`);
 
-        // Get the next available meal in chronological order
-        let match = null;
-        if (nextMealIndex < clientMeals.length) {
-          match = clientMeals[nextMealIndex];
-          nextMealIndex++;
-          Logger.log(`     ✅ MATCHED sequentially to "${match.mealName}"`);
-        } else {
-          Logger.log(`     ❌ NO MATCH (no more meals available for this client)`);
-        }
+      if (meal) {
+        Logger.log(`     ✅ MATCHED to "${meal.mealName}" (${meal.email})`);
 
-        const row = createMealRow(email, url, fileTime, match);
+        const fileTime = file.getLastUpdated();
+        const row = createMealRow(meal.email, url, fileTime, meal);
         destSheet.appendRow(row);
         existingImages.add(url);
 
-        if (match) {
-          matchedRows.push(row);
-          matchedCount++;
-        } else {
-          unmatchedCount++;
-        }
+        matchedRows.push(row);
+        matchedCount++;
+      } else {
+        Logger.log(`     ❌ NO MATCH (submission ID not found in form responses)`);
+        unmatchedCount++;
+
+        // Still add to sheet with no match
+        const fileTime = file.getLastUpdated();
+        const row = createMealRow('', url, fileTime, null);
+        destSheet.appendRow(row);
+        existingImages.add(url);
       }
     }
+
+    Logger.log(`\n✓ Processed ${totalImages} images total`);
+
   } catch (e) {
     Logger.log(`ERROR scanning Drive: ${e.message}`);
     Logger.log(`Stack trace: ${e.stack}`);
@@ -722,8 +689,23 @@ function scanDriveAndMatch(ss, mealIndex) {
   return {
     matchedRows: matchedRows,
     matched: matchedCount,
-    unmatched: unmatchedCount
+    unmatched: unmatchedCount,
+    noSubmissionId: noSubmissionIdCount
   };
+}
+
+// Helper function to extract submission ID from filename
+function extractSubmissionIdFromFilename(filename) {
+  // Remove file extension
+  const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+
+  // Check if it's a numeric submission ID
+  // Submission IDs are long numbers like 638138601111319674
+  if (/^\d+$/.test(nameWithoutExt)) {
+    return nameWithoutExt;
+  }
+
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
