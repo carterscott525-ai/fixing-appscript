@@ -4,11 +4,19 @@ A Google Apps Script that automatically matches meal submission forms with uploa
 
 ## 🔴 V3 CRITICAL UPDATE
 
-**Fixed:** Images were pairing with the wrong meals due to timezone parsing bug in V2.
+**Fixed TWO Critical Bugs:**
+1. **Wrong Meal Pairing:** Images were pairing with incorrect meals
+2. **Timestamp Display:** Times showed incorrectly (e.g., 21:34 → 1:34)
 
-**The Issue:** String timestamps like "2025-11-04 11:43:46" were interpreted in the script's timezone instead of the spreadsheet's timezone, causing time offsets (e.g., 5 hours if EST vs UTC).
+**The Issues:**
+1. String timestamps like "2025-11-04 11:43:46" were interpreted in the script's timezone instead of the spreadsheet's timezone, causing time offsets
+2. Formatted strings were written to the sheet instead of Date objects, causing Google Sheets to misinterpret the timezone
 
-**The Fix:** V3 explicitly calculates timezone offset and parses strings in the spreadsheet's timezone. See [TIMEZONE_FIX_CHANGELOG.md](TIMEZONE_FIX_CHANGELOG.md) for full technical details.
+**The Fixes:**
+1. V3 explicitly calculates timezone offset and parses strings in the spreadsheet's timezone
+2. V3 writes Date objects directly (not formatted strings) and sets proper number formatting on the timestamp column
+
+See [TIMEZONE_FIX_CHANGELOG.md](TIMEZONE_FIX_CHANGELOG.md) for full technical details.
 
 ## 🎯 Purpose
 
@@ -80,28 +88,36 @@ const MATCH_WINDOW_MINUTES = 1440; // 24 hours
 
 ## 🔧 What's Fixed in V3
 
-### Critical Fixes:
+### V3 Critical Fixes (Latest):
 
-1. **Correct Timezone-Aware String Parsing (V3 - THE FIX)**
+1. **Correct Timezone-Aware String Parsing**
    - Calculates timezone offset between script and spreadsheet
    - Parses string timestamps in spreadsheet's timezone
    - Prevents time shifts that caused wrong meal matching
-   - **This is why images now pair correctly!**
+   - **Images now pair with correct meals!**
 
-2. **Robust Timestamp Parsing (V2)**
+2. **Fix Timestamp Display (21:34 → 1:34 Bug)**
+   - Writes Date objects instead of formatted strings
+   - Google Sheets displays times correctly in spreadsheet timezone
+   - Added proper number formatting to timestamp column
+   - **Times now display correctly: 21:34 stays 21:34!**
+
+### V2 Features (Retained):
+
+3. **Robust Timestamp Parsing**
    - Handles Date objects, strings, and numeric timestamps
    - Proper error handling with null returns
    - Null checks for invalid data
 
-3. **Timezone Validation (V2)**
+4. **Timezone Validation**
    - Warns when spreadsheet/script timezones differ
    - Better error messages for configuration issues
 
-4. **Proper Millisecond Normalization (V2)**
+5. **Proper Millisecond Normalization**
    - All comparisons use timezone-independent timestamps
    - Consistent behavior across all timezones
 
-5. **Enhanced Error Handling (V2)**
+6. **Enhanced Error Handling**
    - Tracks and reports invalid timestamps
    - Stack traces for debugging
    - Graceful degradation

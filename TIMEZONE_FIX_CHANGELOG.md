@@ -5,11 +5,19 @@ This document outlines all fixes applied to the Meal Child Script to properly ha
 
 ## 🔴 CRITICAL UPDATE V3 (Latest)
 
-**Issue Found:** V2 still had a timezone parsing bug that caused images to pair with the wrong meals.
+**Issues Found:**
+1. V2 had a timezone parsing bug that caused images to pair with the wrong meals
+2. Timestamps displayed incorrectly (e.g., 21:34 → 1:34) in the output sheet
 
-**Root Cause:** When parsing string timestamps like "2025-11-04 11:43:46", the code converted them to ISO format "2025-11-04T11:43:46" and passed to `new Date()`. This caused JavaScript to interpret the time in the **script's timezone** instead of the **spreadsheet's timezone**, leading to time offsets (e.g., 5 hours if script is in UTC but spreadsheet is in EST).
+**Root Causes:**
+1. **Parsing Bug:** String timestamps like "2025-11-04 11:43:46" were converted to ISO format and passed to `new Date()`. JavaScript interpreted the time in the **script's timezone** instead of the **spreadsheet's timezone**, leading to time offsets (e.g., 5 hours if script is in UTC but spreadsheet is in EST).
 
-**The Fix:** Updated `parseTimestamp()` to calculate the timezone offset between script and spreadsheet timezones, then explicitly parse strings in the spreadsheet's timezone by applying the offset correction.
+2. **Display Bug:** The script wrote formatted STRING timestamps to the sheet instead of Date objects. When Google Sheets tried to interpret these strings, it could parse them in the wrong timezone, causing 21:34 to display as 1:34.
+
+**The Fixes:**
+1. **Parsing:** Updated `parseTimestamp()` to calculate the timezone offset between script and spreadsheet timezones, then explicitly parse strings in the spreadsheet's timezone.
+
+2. **Display:** Changed `createMealRow()` to write Date objects directly instead of formatted strings, and added proper number formatting to the timestamp column.
 
 ---
 
@@ -54,7 +62,47 @@ function parseTimestamp(value, spreadsheetTZ) {
 
 ---
 
-### 2. Timezone Validation and Warnings
+### 2. Fix Timestamp Display (Write Date Objects, Not Strings) - V3 FIX
+**Location:** Lines 678-694
+
+**Problem (Caused 21:34 → 1:34 Display Bug):**
+- V2 code called `formatDateForDisplay()` to convert Date to string
+- String like "Nov 4, 2025 9:34 PM" was written to sheet
+- Google Sheets tried to parse this string and interpreted it incorrectly
+- Result: 21:34 displayed as 1:34 (timezone confusion)
+
+**Solution (V3):**
+```javascript
+function createMealRow(email, imageUrl, fileTime, match) {
+  const submissionTime = match ? match.submissionTime : fileTime;
+
+  // CRITICAL FIX: Write the Date object directly, not a formatted string
+  return [
+    email,
+    imageUrl,
+    submissionTime,  // Date object, not string!
+    ...
+  ];
+}
+```
+
+**Also Added Column Formatting:**
+```javascript
+// In getOrCreateSheet()
+sheet.getRange(2, 3, sheet.getLastRow() - 1, 1)
+  .setNumberFormat('MMM d, yyyy h:mm:ss a');
+```
+
+**Benefits:**
+- Date objects preserve timezone information correctly
+- Google Sheets displays them in the spreadsheet's timezone
+- No more string parsing ambiguity
+- Consistent display: 21:34 stays 21:34
+- Number format ensures proper date/time display
+
+---
+
+### 3. Timezone Validation and Warnings
 **Location:** Lines 53-75
 
 **Problem:**
@@ -81,7 +129,7 @@ function getTimezones() {
 
 ---
 
-### 3. Proper Use of `normalizeToSpreadsheetTime`
+### 4. Proper Use of `normalizeToSpreadsheetTime`
 **Location:** Lines 130-140
 
 **Problem:**
@@ -110,7 +158,7 @@ function normalizeToSpreadsheetTime(date) {
 
 ---
 
-### 4. Enhanced Error Handling
+### 5. Enhanced Error Handling
 **Location:** Multiple locations
 
 **Changes:**
@@ -150,7 +198,7 @@ function normalizeToSpreadsheetTime(date) {
 
 ---
 
-### 5. Improved Diagnostic Function
+### 6. Improved Diagnostic Function
 **Location:** Lines 167-254
 
 **Enhancements:**
@@ -171,7 +219,7 @@ const testCases = [
 
 ---
 
-### 6. Better Logging Throughout
+### 7. Better Logging Throughout
 **Location:** Multiple locations
 
 **Improvements:**
@@ -373,11 +421,15 @@ const MATCH_WINDOW_MINUTES = 1440; // 24 hours
 ## Version History
 
 ### V3 (Current - 2025-11-05)
-- ✅ **CRITICAL FIX:** Correct timezone-aware string parsing
-- ✅ Calculates and applies timezone offset
-- ✅ parseTimestamp() accepts spreadsheetTZ parameter
-- ✅ All timestamp parsing respects spreadsheet timezone
-- ✅ Images now pair with correct meals
+- ✅ **CRITICAL FIX #1:** Correct timezone-aware string parsing
+  - Calculates and applies timezone offset
+  - parseTimestamp() accepts spreadsheetTZ parameter
+  - All timestamp parsing respects spreadsheet timezone
+  - Images now pair with correct meals
+- ✅ **CRITICAL FIX #2:** Correct timestamp display
+  - Writes Date objects instead of formatted strings
+  - Adds number formatting to timestamp column
+  - Times display correctly (21:34 stays 21:34)
 - ✅ All V2 features retained
 
 ### V2 (Deprecated - had timezone bug)

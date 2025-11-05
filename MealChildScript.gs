@@ -677,12 +677,13 @@ function findNearestUnusedMeal(meals, fileTimeMs, usedMealIndices) {
 
 function createMealRow(email, imageUrl, fileTime, match) {
   const submissionTime = match ? match.submissionTime : fileTime;
-  const formattedTime = formatDateForDisplay(submissionTime);
 
+  // CRITICAL FIX: Write the Date object directly, not a formatted string
+  // This lets Google Sheets display it correctly in the spreadsheet's timezone
   return [
     email,
     imageUrl,
-    formattedTime,
+    submissionTime,  // Date object, not string!
     match ? match.mealName : '',
     match ? match.coreIngredients : '',
     match ? match.addedIngredients : '',
@@ -765,7 +766,9 @@ function extractEmailFromFolderName(name) {
 
 function getOrCreateSheet(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
-  if (!sheet) {
+  const isNewSheet = !sheet;
+
+  if (isNewSheet) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
     sheet.getRange(1, 1, 1, headers.length)
@@ -775,6 +778,15 @@ function getOrCreateSheet(ss, name, headers) {
     sheet.setFrozenRows(1);
     Logger.log(`✓ Created sheet: ${name}`);
   }
+
+  // Format the timestamp column (column 3) as date/time
+  // This ensures timestamps display correctly in the spreadsheet's timezone
+  // Apply to both new and existing sheets to fix any legacy string data
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 3, sheet.getLastRow() - 1, 1)
+      .setNumberFormat('MMM d, yyyy h:mm:ss a');
+  }
+
   return sheet;
 }
 
