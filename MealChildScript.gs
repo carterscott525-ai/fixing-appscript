@@ -598,7 +598,7 @@ function scanDriveAndMatch(ss, mealIndex) {
 
       // CRITICAL FIX: Match images and meals sequentially (in chronological order)
       // Both are sorted oldest-first, so 1st image pairs with 1st meal, 2nd with 2nd, etc.
-      let mealIndex = 0;
+      let nextMealIndex = 0;
 
       for (const file of allImages) {
         const url = file.getUrl();
@@ -618,9 +618,9 @@ function scanDriveAndMatch(ss, mealIndex) {
 
         // Get the next available meal in chronological order
         let match = null;
-        if (mealIndex < clientMeals.length) {
-          match = clientMeals[mealIndex];
-          mealIndex++;
+        if (nextMealIndex < clientMeals.length) {
+          match = clientMeals[nextMealIndex];
+          nextMealIndex++;
           Logger.log(`     ✅ MATCHED sequentially to "${match.mealName}"`);
         } else {
           Logger.log(`     ❌ NO MATCH (no more meals available for this client)`);
