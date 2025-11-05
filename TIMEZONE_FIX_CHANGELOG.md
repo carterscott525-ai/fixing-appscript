@@ -1,39 +1,56 @@
-# Meal Child Script - Timezone Fix V2 Changelog
+# Meal Child Script - Timezone Fix V3 Changelog
 
 ## Overview
 This document outlines all fixes applied to the Meal Child Script to properly handle timezones when matching Google Form submissions with Google Drive images.
+
+## 🔴 CRITICAL UPDATE V3 (Latest)
+
+**Issue Found:** V2 still had a timezone parsing bug that caused images to pair with the wrong meals.
+
+**Root Cause:** When parsing string timestamps like "2025-11-04 11:43:46", the code converted them to ISO format "2025-11-04T11:43:46" and passed to `new Date()`. This caused JavaScript to interpret the time in the **script's timezone** instead of the **spreadsheet's timezone**, leading to time offsets (e.g., 5 hours if script is in UTC but spreadsheet is in EST).
+
+**The Fix:** Updated `parseTimestamp()` to calculate the timezone offset between script and spreadsheet timezones, then explicitly parse strings in the spreadsheet's timezone by applying the offset correction.
 
 ---
 
 ## Critical Fixes
 
-### 1. Robust Timestamp Parsing Function (`parseTimestamp`)
-**Location:** Lines 78-128
+### 1. Robust Timestamp Parsing Function (`parseTimestamp`) - V3 FIX
+**Location:** Lines 74-160
 
-**Problem:**
-- Original code had inconsistent handling of Date objects vs strings
-- When parsing string format "2025-11-04 11:43:46", it created a Date using the local constructor, which could interpret the time in the wrong timezone
-- No validation of parsed timestamps
+**Problem (V2 Bug):**
+- V2 code converted "2025-11-04 11:43:46" to ISO format "2025-11-04T11:43:46"
+- `new Date("2025-11-04T11:43:46")` interprets this in the **script's LOCAL timezone**
+- But the string is actually in the **spreadsheet's timezone**
+- Result: Time offset equal to timezone difference (e.g., 5 hours if EST vs UTC)
+- **This caused images to match with the wrong meals!**
 
-**Solution:**
+**Solution (V3):**
 ```javascript
-function parseTimestamp(value) {
-  // Handles:
-  // 1. Date objects (from Google Sheets)
-  // 2. String timestamps (from form responses)
-  // 3. Numeric timestamps (milliseconds since epoch)
-
+function parseTimestamp(value, spreadsheetTZ) {
   // For string format "2025-11-04 11:43:46":
-  // - Converts to ISO format: "2025-11-04T11:43:46"
-  // - Uses standard Date parser for consistent behavior
-  // - Returns null for invalid inputs
+
+  // 1. Calculate timezone offset between script and spreadsheet
+  const testDate = new Date('2025-01-15T12:00:00Z');
+  const testFormatted = Utilities.formatDate(testDate, spreadsheetTZ, 'yyyy-MM-dd HH:mm:ss');
+  const testParsedLocal = new Date(testFormatted.replace(' ', 'T'));
+  const tzOffsetMs = testDate.getTime() - testParsedLocal.getTime();
+
+  // 2. Parse the string as local time
+  const localParsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
+
+  // 3. Apply offset to get correct UTC time
+  const correctedDate = new Date(localParsed.getTime() + tzOffsetMs);
+
+  return correctedDate;
 }
 ```
 
 **Benefits:**
-- Consistent parsing regardless of input format
-- Proper error handling with null returns
-- ISO format conversion prevents timezone ambiguity
+- Correctly interprets strings in spreadsheet's timezone
+- Handles timezone differences between script and spreadsheet
+- Prevents time offsets that cause wrong meal matching
+- All calls now pass spreadsheetTZ parameter
 
 ---
 
@@ -212,6 +229,69 @@ Logger.log(`📚 Meal history: ${history.size} unique meals loaded`);
 
 ---
 
+## What Changed: V2 → V3
+
+### The Problem in V2
+
+**Symptom:** Images were paired with the **opposite/wrong** meal, even though V2 claimed to fix timezones.
+
+**Example Scenario:**
+```
+Spreadsheet timezone: America/New_York (EST, UTC-5)
+Script timezone: UTC (or different from spreadsheet)
+
+Form submission string: "2025-11-04 11:43:46"
+This means: 11:43:46 AM in EST
+```
+
+**What V2 Did (WRONG):**
+```javascript
+// V2 code
+const isoString = "2025-11-04T11:43:46";
+const date = new Date(isoString);
+// JavaScript interprets this as 11:43:46 in the SCRIPT's timezone (UTC)
+// Result: 11:43:46 UTC instead of 11:43:46 EST
+// Off by 5 hours!
+```
+
+**What V3 Does (CORRECT):**
+```javascript
+// V3 code
+function parseTimestamp(value, spreadsheetTZ) {
+  // Calculate timezone offset
+  const tzOffsetMs = calculateOffset(spreadsheetTZ);
+
+  // Parse string and apply offset
+  const localParsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
+  const correctedDate = new Date(localParsed.getTime() + tzOffsetMs);
+
+  // Result: Correctly represents 11:43:46 EST
+  // Matches correctly with Drive files!
+}
+```
+
+### Key Difference
+
+| Aspect | V2 | V3 |
+|--------|----|----|
+| String parsing | Interprets in script TZ | Interprets in spreadsheet TZ ✅ |
+| Timezone offset | Ignored | Calculated and applied ✅ |
+| parseTimestamp signature | `parseTimestamp(value)` | `parseTimestamp(value, spreadsheetTZ)` ✅ |
+| Result | Images paired with wrong meals ❌ | Correct pairing ✅ |
+
+### Why This Matters
+
+If your spreadsheet is in EST and your script runs in UTC:
+- Form submission at "11:43 AM EST"
+- V2 interprets as "11:43 AM UTC" = actually 6:43 AM EST
+- Image uploaded at 11:50 AM EST
+- V2 thinks form is 5 hours in the future!
+- Result: Matches with wrong meal or no match
+
+V3 fixes this by explicitly handling the timezone offset.
+
+---
+
 ## Migration Guide
 
 ### If You're Using the Old Version:
@@ -292,13 +372,22 @@ const MATCH_WINDOW_MINUTES = 1440; // 24 hours
 
 ## Version History
 
-### V2 (Current)
-- ✅ Robust timestamp parsing
+### V3 (Current - 2025-11-05)
+- ✅ **CRITICAL FIX:** Correct timezone-aware string parsing
+- ✅ Calculates and applies timezone offset
+- ✅ parseTimestamp() accepts spreadsheetTZ parameter
+- ✅ All timestamp parsing respects spreadsheet timezone
+- ✅ Images now pair with correct meals
+- ✅ All V2 features retained
+
+### V2 (Deprecated - had timezone bug)
+- ✅ Robust timestamp parsing (but buggy for strings)
 - ✅ Timezone validation and warnings
 - ✅ Proper use of millisecond normalization
 - ✅ Enhanced error handling
 - ✅ Improved diagnostics
 - ✅ Better logging
+- ❌ **BUG:** Parsed string timestamps in script TZ instead of spreadsheet TZ
 
 ### V1 (Original with attempted timezone fix)
 - ❌ Inconsistent timestamp parsing

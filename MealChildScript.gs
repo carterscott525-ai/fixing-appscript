@@ -1,9 +1,14 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════
- * MEAL CHILD SCRIPT - TIMEZONE FIX V2
+ * MEAL CHILD SCRIPT - TIMEZONE FIX V3
  * ═══════════════════════════════════════════════════════════════════════
  *
- * FIXES:
+ * V3 CRITICAL FIX:
+ * - String timestamps now parsed in SPREADSHEET timezone (not script timezone)
+ * - Calculates timezone offset between script and spreadsheet timezones
+ * - Prevents time shifts that caused images to pair with wrong meals
+ *
+ * V2 FEATURES:
  * - Proper timezone handling between form submissions and Drive files
  * - Explicit timezone normalization for accurate matching
  * - One-to-one matching with used meal tracking
@@ -71,12 +76,14 @@ function getTimezones() {
   return { spreadsheetTZ, scriptTZ };
 }
 
-function parseTimestamp(value) {
+function parseTimestamp(value, spreadsheetTZ) {
   /**
    * Robust timestamp parser that handles:
    * 1. Date objects (from Google Sheets cells formatted as dates)
    * 2. String timestamps (from form responses)
    * 3. Numeric timestamps (milliseconds since epoch)
+   *
+   * CRITICAL: String timestamps are interpreted in the spreadsheet's timezone!
    *
    * Returns: Date object or null if invalid
    */
@@ -85,7 +92,16 @@ function parseTimestamp(value) {
     return null;
   }
 
-  // Already a Date object
+  // Get spreadsheet timezone if not provided
+  if (!spreadsheetTZ) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    spreadsheetTZ = ss.getSpreadsheetTimeZone();
+    if (!spreadsheetTZ || spreadsheetTZ === '') {
+      spreadsheetTZ = Session.getScriptTimeZone();
+    }
+  }
+
+  // Already a Date object - Google Sheets returns these correctly parsed
   if (value instanceof Date) {
     if (isNaN(value.getTime())) {
       return null;
@@ -102,21 +118,39 @@ function parseTimestamp(value) {
     return date;
   }
 
-  // String timestamp - need to parse carefully
+  // String timestamp - MUST parse in spreadsheet's timezone
   if (typeof value === 'string') {
     const trimmed = value.trim();
 
     // Format: "2025-11-04 11:43:46" (common Google Sheets export format)
-    // This format is typically in the spreadsheet's timezone
-    const isoLikeMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
-    if (isoLikeMatch) {
-      // CRITICAL FIX: Parse as ISO string to maintain timezone consistency
-      // Reconstruct as ISO format and let Date constructor handle it
-      const isoString = `${isoLikeMatch[1]}-${isoLikeMatch[2]}-${isoLikeMatch[3]}T${isoLikeMatch[4]}:${isoLikeMatch[5]}:${isoLikeMatch[6]}`;
-      const date = new Date(isoString);
+    // CRITICAL: This string represents a time in the SPREADSHEET'S timezone
+    const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
+    if (match) {
+      const [, year, month, day, hour, minute, second] = match;
 
-      if (!isNaN(date.getTime())) {
-        return date;
+      // Parse in the spreadsheet's timezone using a reliable method:
+      // Create a date string that Utilities.parseDate can handle
+      const dateForParsing = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+
+      // Use the approach: create date components in UTC, then adjust for timezone
+      // This works because we know the string is in spreadsheetTZ
+
+      // Create a reference point to calculate timezone offset
+      const testDate = new Date('2025-01-15T12:00:00Z'); // Fixed UTC time
+      const testFormatted = Utilities.formatDate(testDate, spreadsheetTZ, 'yyyy-MM-dd HH:mm:ss');
+      const testParsedLocal = new Date(testFormatted.replace(' ', 'T'));
+
+      // The difference tells us the offset
+      const tzOffsetMs = testDate.getTime() - testParsedLocal.getTime();
+
+      // Now parse our target string as if it's local time
+      const localParsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
+
+      // Apply the offset to get the correct UTC time
+      const correctedDate = new Date(localParsed.getTime() + tzOffsetMs);
+
+      if (!isNaN(correctedDate.getTime())) {
+        return correctedDate;
       }
     }
 
@@ -175,10 +209,11 @@ function formatDateForLog(date) {
 
 function diagnosticCheck() {
   Logger.log('═══════════════════════════════════════════════════════════');
-  Logger.log('DIAGNOSTIC CHECK - Meal Child Script (Timezone Fix V2)');
+  Logger.log('DIAGNOSTIC CHECK - Meal Child Script (Timezone Fix V3)');
   Logger.log('═══════════════════════════════════════════════════════════');
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheetTZ = ss.getSpreadsheetTimeZone();
 
   getTimezones();
 
@@ -203,7 +238,7 @@ function diagnosticCheck() {
         Logger.log(`  Timestamp type: ${typeof timeValue}`);
         Logger.log(`  Timestamp value: ${timeValue}`);
 
-        const parsed = parseTimestamp(timeValue);
+        const parsed = parseTimestamp(timeValue, spreadsheetTZ);
         if (parsed) {
           Logger.log(`  ✓ Parsed successfully: ${formatDateForLog(parsed)}`);
           Logger.log(`  Milliseconds: ${parsed.getTime()}`);
@@ -262,7 +297,7 @@ function diagnosticCheck() {
   ];
 
   testCases.forEach((test, idx) => {
-    const parsed = parseTimestamp(test);
+    const parsed = parseTimestamp(test, spreadsheetTZ);
     if (parsed) {
       Logger.log(`  Test ${idx + 1}: ✓ ${formatDateForLog(parsed)}`);
     } else {
@@ -281,7 +316,7 @@ function diagnosticCheck() {
 
 function runMealSync() {
   Logger.log('═══════════════════════════════════════════════════════════');
-  Logger.log('STARTING MEAL SYNC (Timezone Fix V2)');
+  Logger.log('STARTING MEAL SYNC (Timezone Fix V3)');
   Logger.log('═══════════════════════════════════════════════════════════');
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -319,6 +354,9 @@ function buildMealIndex(ss) {
   if (!sourceSheet || sourceSheet.getLastRow() <= 1) {
     return { data: new Map(), totalCount: 0, emailCount: 0, errors: 0 };
   }
+
+  // Get spreadsheet timezone for correct timestamp parsing
+  const spreadsheetTZ = ss.getSpreadsheetTimeZone();
 
   const headers = sourceSheet.getRange(1, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
   const values = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, sourceSheet.getLastColumn()).getValues();
@@ -360,8 +398,8 @@ function buildMealIndex(ss) {
       continue;
     }
 
-    // CRITICAL FIX: Use robust parseTimestamp function
-    const submissionTime = parseTimestamp(timeValue);
+    // CRITICAL FIX: Use robust parseTimestamp function with spreadsheet timezone
+    const submissionTime = parseTimestamp(timeValue, spreadsheetTZ);
 
     if (!submissionTime) {
       Logger.log(`⚠️  Row ${i + 2}: Invalid timestamp (${typeof timeValue}): ${timeValue}`);
@@ -746,7 +784,7 @@ function getOrCreateSheet(ss, name, headers) {
 
 function setupMealChild() {
   Logger.log('═══════════════════════════════════════════════════════════');
-  Logger.log('MEAL CHILD SETUP (Timezone Fix V2)');
+  Logger.log('MEAL CHILD SETUP (Timezone Fix V3)');
   Logger.log('═══════════════════════════════════════════════════════════');
 
   const triggers = ScriptApp.getProjectTriggers();

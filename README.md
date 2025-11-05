@@ -1,6 +1,14 @@
-# Meal Child Script - Timezone Fix V2
+# Meal Child Script - Timezone Fix V3
 
 A Google Apps Script that automatically matches meal submission forms with uploaded images from Google Drive, with robust timezone handling for accurate matching.
+
+## 🔴 V3 CRITICAL UPDATE
+
+**Fixed:** Images were pairing with the wrong meals due to timezone parsing bug in V2.
+
+**The Issue:** String timestamps like "2025-11-04 11:43:46" were interpreted in the script's timezone instead of the spreadsheet's timezone, causing time offsets (e.g., 5 hours if EST vs UTC).
+
+**The Fix:** V3 explicitly calculates timezone offset and parses strings in the spreadsheet's timezone. See [TIMEZONE_FIX_CHANGELOG.md](TIMEZONE_FIX_CHANGELOG.md) for full technical details.
 
 ## 🎯 Purpose
 
@@ -70,29 +78,35 @@ const COACH_MEAL_POOL = 'Meal Pool';
 const MATCH_WINDOW_MINUTES = 1440; // 24 hours
 ```
 
-## 🔧 What's Fixed in V2
+## 🔧 What's Fixed in V3
 
 ### Critical Fixes:
 
-1. **Robust Timestamp Parsing**
+1. **Correct Timezone-Aware String Parsing (V3 - THE FIX)**
+   - Calculates timezone offset between script and spreadsheet
+   - Parses string timestamps in spreadsheet's timezone
+   - Prevents time shifts that caused wrong meal matching
+   - **This is why images now pair correctly!**
+
+2. **Robust Timestamp Parsing (V2)**
    - Handles Date objects, strings, and numeric timestamps
-   - Proper ISO format conversion
+   - Proper error handling with null returns
    - Null checks for invalid data
 
-2. **Timezone Validation**
+3. **Timezone Validation (V2)**
    - Warns when spreadsheet/script timezones differ
    - Better error messages for configuration issues
 
-3. **Proper Millisecond Normalization**
+4. **Proper Millisecond Normalization (V2)**
    - All comparisons use timezone-independent timestamps
    - Consistent behavior across all timezones
 
-4. **Enhanced Error Handling**
+5. **Enhanced Error Handling (V2)**
    - Tracks and reports invalid timestamps
    - Stack traces for debugging
    - Graceful degradation
 
-See [TIMEZONE_FIX_CHANGELOG.md](TIMEZONE_FIX_CHANGELOG.md) for full details.
+See [TIMEZONE_FIX_CHANGELOG.md](TIMEZONE_FIX_CHANGELOG.md) for full technical details.
 
 ## 📊 How It Works
 
@@ -287,6 +301,11 @@ If you encounter issues:
 
 ## 🔄 Version
 
-**Current Version:** V2 (Timezone Fix)
+**Current Version:** V3 (Critical Timezone Fix)
 **Last Updated:** 2025-11-05
 **Status:** Production Ready ✅
+
+**V3 Changes:**
+- Fixed timezone parsing bug that caused wrong meal pairing
+- String timestamps now correctly parsed in spreadsheet timezone
+- See TIMEZONE_FIX_CHANGELOG.md for migration guide
