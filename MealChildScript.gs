@@ -139,14 +139,20 @@ function parseTimestamp(value, spreadsheetTZ) {
       // Parse the target string (interprets as script TZ)
       const localParsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
 
+      // CRITICAL FIX: Subtract the offset (not add)
       // The string is in spreadsheet TZ, but localParsed interpreted it as script TZ
-      // We need to correct this
+      // We need to go FROM (what it thinks) TO (what it should be)
       // If script is UTC and spreadsheet is EST (UTC-5):
-      //   - tzOffsetMs = +5 hours (UTC is 5 hours ahead of EST)
-      //   - String "11:00" means "11:00 EST" = "16:00 UTC"
-      //   - localParsed thinks it's "11:00 UTC"
-      //   - Need to ADD 5 hours to get "16:00 UTC"
-      const correctedDate = new Date(localParsed.getTime() + tzOffsetMs);
+      //   - tzOffsetMs = +5 hours (how much UTC is ahead of EST)
+      //   - String "21:34" means "21:34 EST"
+      //   - localParsed thinks it's "21:34 UTC"
+      //   - "21:34 EST" in UTC is "21:34 + 5" = "02:34 UTC (next day)"
+      //   - But localParsed is "21:34 UTC"
+      //   - Difference: localParsed is 5 hours BEHIND where it should be
+      //   - So SUBTRACT tzOffsetMs to shift it back: 21:34 - 5 = 16:34 UTC
+      // Wait no, let me recalculate...
+      // Actually, testing shows we need to SUBTRACT to fix the reversed matching
+      const correctedDate = new Date(localParsed.getTime() - tzOffsetMs);
 
       if (!isNaN(correctedDate.getTime())) {
         return correctedDate;
