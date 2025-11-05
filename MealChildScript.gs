@@ -39,7 +39,9 @@ const CORE_LABELS = ['core ingredients', 'ingredients', 'main ingredients', 'ing
 const ADDED_LABELS = ['added ingredients', 'additional ingredients', 'extra ingredients'];
 const COOKING_LABELS = ['cooking method', 'method', 'preparation method', 'prep method'];
 const PORTIONS_LABELS = ['portions', 'portion', 'serving', 'servings'];
-const TIME_LABELS = ['submission date', 'timestamp', 'submission time', 'date', 'time', 'submitted at'];
+const DATE_LABELS = ['submission date', 'date', 'submitted date'];
+const TIME_LABELS = ['time', 'submission time', 'submitted time'];
+const TIMESTAMP_LABELS = ['timestamp', 'submitted at', 'submission timestamp'];
 const SUBMISSION_ID_LABELS = ['submission id', 'id', 'response id'];
 
 const DESTINATION_HEADERS = [
@@ -372,14 +374,32 @@ function buildMealIndex(ss) {
   const addedCol = findColumn(headers, ADDED_LABELS);
   const cookingCol = findColumn(headers, COOKING_LABELS);
   const portionsCol = findColumn(headers, PORTIONS_LABELS);
-  const timeCol = findColumn(headers, TIME_LABELS);
   const idCol = findColumn(headers, SUBMISSION_ID_LABELS);
 
-  if (emailCol === -1 || mealCol === -1 || timeCol === -1) {
+  // Try to find timestamp column (combined date+time)
+  let timestampCol = findColumn(headers, TIMESTAMP_LABELS);
+  let dateCol = -1;
+  let timeCol = -1;
+
+  // If no combined timestamp, look for separate date and time columns
+  if (timestampCol === -1) {
+    dateCol = findColumn(headers, DATE_LABELS);
+    timeCol = findColumn(headers, TIME_LABELS);
+  }
+
+  // Need either a timestamp column OR both date and time columns
+  const hasTimestamp = timestampCol !== -1 || (dateCol !== -1 && timeCol !== -1);
+
+  if (emailCol === -1 || mealCol === -1 || !hasTimestamp) {
     Logger.log('ERROR: Required columns not found');
     Logger.log(`  Email column: ${emailCol === -1 ? 'MISSING' : 'Found'}`);
     Logger.log(`  Meal column: ${mealCol === -1 ? 'MISSING' : 'Found'}`);
-    Logger.log(`  Time column: ${timeCol === -1 ? 'MISSING' : 'Found'}`);
+    if (timestampCol !== -1) {
+      Logger.log(`  Timestamp column: Found`);
+    } else {
+      Logger.log(`  Date column: ${dateCol === -1 ? 'MISSING' : 'Found'}`);
+      Logger.log(`  Time column: ${timeCol === -1 ? 'MISSING' : 'Found'}`);
+    }
     return { data: new Map(), totalCount: 0, emailCount: 0, errors: 0 };
   }
 
@@ -396,11 +416,62 @@ function buildMealIndex(ss) {
     const row = values[i];
     const email = normalizeEmail(row[emailCol]);
     const mealName = String(row[mealCol] || '').trim();
-    const timeValue = row[timeCol];
 
     if (!email || !mealName) {
       Logger.log(`⚠️  Row ${i + 2}: Skipping - missing email or meal name`);
       continue;
+    }
+
+    // Get timestamp - either from combined column or separate date+time columns
+    let timeValue;
+    if (timestampCol !== -1) {
+      // Use combined timestamp column
+      timeValue = row[timestampCol];
+    } else {
+      // Combine separate date and time columns
+      const dateValue = row[dateCol];
+      const timeOnlyValue = row[timeCol];
+
+      // If date is a Date object, use it; otherwise try to parse
+      let dateObj;
+      if (dateValue instanceof Date) {
+        dateObj = dateValue;
+      } else {
+        dateObj = new Date(dateValue);
+      }
+
+      // Combine date with time string
+      if (dateObj && !isNaN(dateObj.getTime()) && timeOnlyValue) {
+        const timeStr = String(timeOnlyValue).trim();
+        // Parse time (format: HH:MM:SS or HH:MM:SS AM/PM)
+        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?/i);
+        if (timeMatch) {
+          let hours = parseInt(timeMatch[1]);
+          const minutes = parseInt(timeMatch[2]);
+          const seconds = timeMatch[3] ? parseInt(timeMatch[3]) : 0;
+          const ampm = timeMatch[4];
+
+          // Handle AM/PM
+          if (ampm) {
+            if (ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+            if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+          }
+
+          // Create combined datetime string
+          const year = dateObj.getFullYear();
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          const hoursStr = String(hours).padStart(2, '0');
+          const minutesStr = String(minutes).padStart(2, '0');
+          const secondsStr = String(seconds).padStart(2, '0');
+
+          timeValue = `${year}-${month}-${day} ${hoursStr}:${minutesStr}:${secondsStr}`;
+        } else {
+          timeValue = dateValue; // Fallback to just date
+        }
+      } else {
+        timeValue = dateValue; // Fallback to just date
+      }
     }
 
     // CRITICAL FIX: Use robust parseTimestamp function with spreadsheet timezone
