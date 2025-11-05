@@ -596,7 +596,10 @@ function scanDriveAndMatch(ss, mealIndex) {
 
       Logger.log(`\n📸 Processing ${allImages.length} images for ${email}`);
 
-      // Match each image
+      // CRITICAL FIX: Match images and meals sequentially (in chronological order)
+      // Both are sorted oldest-first, so 1st image pairs with 1st meal, 2nd with 2nd, etc.
+      let mealIndex = 0;
+
       for (const file of allImages) {
         const url = file.getUrl();
         if (existingImages.has(url)) continue;
@@ -613,7 +616,15 @@ function scanDriveAndMatch(ss, mealIndex) {
         Logger.log(`\n  🖼️  Image: ${file.getName()}`);
         Logger.log(`     Modified: ${formatDateForLog(fileTime)}`);
 
-        const match = findNearestUnusedMeal(clientMeals, fileTimeMs, usedMealIndices);
+        // Get the next available meal in chronological order
+        let match = null;
+        if (mealIndex < clientMeals.length) {
+          match = clientMeals[mealIndex];
+          mealIndex++;
+          Logger.log(`     ✅ MATCHED sequentially to "${match.mealName}"`);
+        } else {
+          Logger.log(`     ❌ NO MATCH (no more meals available for this client)`);
+        }
 
         const row = createMealRow(email, url, fileTime, match);
         destSheet.appendRow(row);
@@ -622,10 +633,8 @@ function scanDriveAndMatch(ss, mealIndex) {
         if (match) {
           matchedRows.push(row);
           matchedCount++;
-          Logger.log(`     ✅ MATCHED to "${match.mealName}"`);
         } else {
           unmatchedCount++;
-          Logger.log(`     ❌ NO MATCH (no meals within 24hr window)`);
         }
       }
     }
