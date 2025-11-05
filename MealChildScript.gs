@@ -22,8 +22,8 @@
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════
 
-const DRIVE_FOLDER_NAME = 'official image submissions';
-const MEAL_INFO_SOURCE = 'Form responses';
+const DRIVE_FOLDER_NAME = 'Meal Submission Images 6.0';
+const MEAL_INFO_SOURCE = 'Client Meal Submissions 6.0';
 const MEAL_DESTINATION = 'Meal Image+Info';
 const COACH_MASTER_ID = '10isGpEx75IcGMZTNgkkkx2Cs2toFqYhWXQeMmpjQsAQ';
 const COACH_MEAL_POOL = 'Meal Pool';
@@ -581,7 +581,7 @@ function lookupPreviousMeal(mealHistory, email, mealName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SCAN DRIVE AND MATCH - BY SUBMISSION ID
+// SCAN DRIVE AND MATCH - BY SUBMISSION ID (WITH RECURSIVE SUBFOLDER SCANNING)
 // ═══════════════════════════════════════════════════════════════════════
 
 function scanDriveAndMatch(ss, mealIndex) {
@@ -601,80 +601,18 @@ function scanDriveAndMatch(ss, mealIndex) {
   let noSubmissionIdCount = 0;
 
   try {
-    // NEW: Get all images from the root folder (not subfolders by email)
     const rootFolder = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME).next();
-    const files = rootFolder.getFiles();
 
-    Logger.log(`\n📸 Scanning images in "${DRIVE_FOLDER_NAME}"...`);
+    Logger.log(`\n📸 Scanning images in "${DRIVE_FOLDER_NAME}" (including subfolders)...`);
 
-    let totalImages = 0;
+    // Process all images recursively
+    const stats = processFolder(rootFolder, null, mealIndex, destSheet, existingImages, matchedRows);
 
-    while (files.hasNext()) {
-      const file = files.next();
+    matchedCount = stats.matched;
+    unmatchedCount = stats.unmatched;
+    noSubmissionIdCount = stats.noSubmissionId;
 
-      // Only process image files
-      if (!file.getMimeType().startsWith('image/')) {
-        continue;
-      }
-
-      totalImages++;
-      const url = file.getUrl();
-      const filename = file.getName();
-
-      // Skip if already processed
-      if (existingImages.has(url)) {
-        Logger.log(`  ⏭️  Skipping (already processed): ${filename}`);
-        continue;
-      }
-
-      // NEW: Extract submission ID from filename
-      // Expected format: 638138601111319674.jpg
-      // Extract just the number before the file extension
-      const submissionId = extractSubmissionIdFromFilename(filename);
-
-      if (!submissionId) {
-        Logger.log(`\n  🖼️  Image: ${filename}`);
-        Logger.log(`     ❌ NO MATCH (cannot extract submission ID from filename)`);
-        noSubmissionIdCount++;
-        unmatchedCount++;
-
-        // Still add to sheet with no match
-        const fileTime = file.getLastUpdated();
-        const row = createMealRow('', url, fileTime, null);
-        destSheet.appendRow(row);
-        existingImages.add(url);
-        continue;
-      }
-
-      // NEW: Look up meal by submission ID
-      const meal = mealIndex.get(submissionId);
-
-      Logger.log(`\n  🖼️  Image: ${filename}`);
-      Logger.log(`     Submission ID: ${submissionId}`);
-
-      if (meal) {
-        Logger.log(`     ✅ MATCHED to "${meal.mealName}" (${meal.email})`);
-
-        const fileTime = file.getLastUpdated();
-        const row = createMealRow(meal.email, url, fileTime, meal);
-        destSheet.appendRow(row);
-        existingImages.add(url);
-
-        matchedRows.push(row);
-        matchedCount++;
-      } else {
-        Logger.log(`     ❌ NO MATCH (submission ID not found in form responses)`);
-        unmatchedCount++;
-
-        // Still add to sheet with no match
-        const fileTime = file.getLastUpdated();
-        const row = createMealRow('', url, fileTime, null);
-        destSheet.appendRow(row);
-        existingImages.add(url);
-      }
-    }
-
-    Logger.log(`\n✓ Processed ${totalImages} images total`);
+    Logger.log(`\n✓ Processed ${stats.total} images total`);
 
   } catch (e) {
     Logger.log(`ERROR scanning Drive: ${e.message}`);
@@ -694,10 +632,107 @@ function scanDriveAndMatch(ss, mealIndex) {
   };
 }
 
-// Helper function to extract submission ID from filename
-function extractSubmissionIdFromFilename(filename) {
-  // Remove file extension
-  const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+// Recursive function to process a folder and its subfolders
+function processFolder(folder, parentSubmissionId, mealIndex, destSheet, existingImages, matchedRows) {
+  let stats = {
+    total: 0,
+    matched: 0,
+    unmatched: 0,
+    noSubmissionId: 0
+  };
+
+  // Extract submission ID from current folder name if available
+  const folderSubmissionId = extractSubmissionIdFromFilename(folder.getName()) || parentSubmissionId;
+
+  // Process all files in this folder
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    const file = files.next();
+
+    // Only process image files
+    if (!file.getMimeType().startsWith('image/')) {
+      continue;
+    }
+
+    stats.total++;
+    const url = file.getUrl();
+    const filename = file.getName();
+
+    // Skip if already processed
+    if (existingImages.has(url)) {
+      Logger.log(`  ⏭️  Skipping (already processed): ${filename}`);
+      continue;
+    }
+
+    // Try to extract submission ID from filename first, then from folder
+    let submissionId = extractSubmissionIdFromFilename(filename);
+    if (!submissionId && folderSubmissionId) {
+      submissionId = folderSubmissionId;
+      Logger.log(`\n  🖼️  Image: ${filename}`);
+      Logger.log(`     Submission ID (from folder): ${submissionId}`);
+    } else if (submissionId) {
+      Logger.log(`\n  🖼️  Image: ${filename}`);
+      Logger.log(`     Submission ID (from filename): ${submissionId}`);
+    }
+
+    if (!submissionId) {
+      Logger.log(`\n  🖼️  Image: ${filename}`);
+      Logger.log(`     ❌ NO MATCH (cannot extract submission ID from filename or folder)`);
+      stats.noSubmissionId++;
+      stats.unmatched++;
+
+      // Still add to sheet with no match
+      const fileTime = file.getLastUpdated();
+      const row = createMealRow('', url, fileTime, null);
+      destSheet.appendRow(row);
+      existingImages.add(url);
+      continue;
+    }
+
+    // Look up meal by submission ID
+    const meal = mealIndex.get(submissionId);
+
+    if (meal) {
+      Logger.log(`     ✅ MATCHED to "${meal.mealName}" (${meal.email})`);
+
+      const fileTime = file.getLastUpdated();
+      const row = createMealRow(meal.email, url, fileTime, meal);
+      destSheet.appendRow(row);
+      existingImages.add(url);
+
+      matchedRows.push(row);
+      stats.matched++;
+    } else {
+      Logger.log(`     ❌ NO MATCH (submission ID not found in form responses)`);
+      stats.unmatched++;
+
+      // Still add to sheet with no match
+      const fileTime = file.getLastUpdated();
+      const row = createMealRow('', url, fileTime, null);
+      destSheet.appendRow(row);
+      existingImages.add(url);
+    }
+  }
+
+  // Recursively process subfolders
+  const subfolders = folder.getFolders();
+  while (subfolders.hasNext()) {
+    const subfolder = subfolders.next();
+    const subStats = processFolder(subfolder, folderSubmissionId, mealIndex, destSheet, existingImages, matchedRows);
+
+    stats.total += subStats.total;
+    stats.matched += subStats.matched;
+    stats.unmatched += subStats.unmatched;
+    stats.noSubmissionId += subStats.noSubmissionId;
+  }
+
+  return stats;
+}
+
+// Helper function to extract submission ID from filename or folder name
+function extractSubmissionIdFromFilename(name) {
+  // Remove file extension if present
+  const nameWithoutExt = name.replace(/\.[^/.]+$/, '');
 
   // Check if it's a numeric submission ID
   // Submission IDs are long numbers like 638138601111319674
