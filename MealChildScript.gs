@@ -128,25 +128,24 @@ function parseTimestamp(value, spreadsheetTZ) {
     if (match) {
       const [, year, month, day, hour, minute, second] = match;
 
-      // Parse in the spreadsheet's timezone using a reliable method:
-      // Create a date string that Utilities.parseDate can handle
-      const dateForParsing = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
-
-      // Use the approach: create date components in UTC, then adjust for timezone
-      // This works because we know the string is in spreadsheetTZ
-
-      // Create a reference point to calculate timezone offset
+      // Calculate timezone offset between script and spreadsheet timezones
       const testDate = new Date('2025-01-15T12:00:00Z'); // Fixed UTC time
       const testFormatted = Utilities.formatDate(testDate, spreadsheetTZ, 'yyyy-MM-dd HH:mm:ss');
       const testParsedLocal = new Date(testFormatted.replace(' ', 'T'));
 
-      // The difference tells us the offset
+      // The offset from script TZ to spreadsheet TZ
       const tzOffsetMs = testDate.getTime() - testParsedLocal.getTime();
 
-      // Now parse our target string as if it's local time
+      // Parse the target string (interprets as script TZ)
       const localParsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
 
-      // Apply the offset to get the correct UTC time
+      // The string is in spreadsheet TZ, but localParsed interpreted it as script TZ
+      // We need to correct this
+      // If script is UTC and spreadsheet is EST (UTC-5):
+      //   - tzOffsetMs = +5 hours (UTC is 5 hours ahead of EST)
+      //   - String "11:00" means "11:00 EST" = "16:00 UTC"
+      //   - localParsed thinks it's "11:00 UTC"
+      //   - Need to ADD 5 hours to get "16:00 UTC"
       const correctedDate = new Date(localParsed.getTime() + tzOffsetMs);
 
       if (!isNaN(correctedDate.getTime())) {
@@ -455,10 +454,16 @@ function buildMealIndex(ss) {
     totalCount++;
   }
 
-  // Sort by timestamp
+  // Sort by timestamp (oldest first)
   for (const [email, meals] of index.entries()) {
     meals.sort((a, b) => a.submissionTimeMs - b.submissionTimeMs);
     Logger.log(`\n📧 ${email}: ${meals.length} submissions indexed`);
+
+    // Log first few timestamps for debugging
+    Logger.log(`  Meal timestamps (first 3):`);
+    for (let i = 0; i < Math.min(3, meals.length); i++) {
+      Logger.log(`    ${i + 1}. ${meals[i].mealName} - ${formatDateForLog(meals[i].submissionTime)}`);
+    }
   }
 
   if (autoFillCount > 0) {
@@ -575,8 +580,13 @@ function scanDriveAndMatch(ss, mealIndex) {
         }
       }
 
-      // Sort images by modification time
+      // Sort images by modification time (oldest first)
       allImages.sort((a, b) => a.getLastUpdated().getTime() - b.getLastUpdated().getTime());
+
+      Logger.log(`  Image timestamps (first 3):`);
+      for (let i = 0; i < Math.min(3, allImages.length); i++) {
+        Logger.log(`    ${i + 1}. ${formatDateForLog(allImages[i].getLastUpdated())}`);
+      }
 
       Logger.log(`\n📸 Processing ${allImages.length} images for ${email}`);
 
