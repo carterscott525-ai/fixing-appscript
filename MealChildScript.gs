@@ -404,6 +404,12 @@ function buildMealIndex(ss) {
     return { data: new Map(), totalCount: 0, errors: 0 };
   }
 
+  // Get Submission IDs using getDisplayValues() to preserve full 19-digit precision
+  const idDisplay = sourceSheet
+    .getRange(2, idCol + 1, sourceSheet.getLastRow() - 1, 1)
+    .getDisplayValues()
+    .map(r => (r[0] || '').toString().replace(/\D/g, ''));
+
   const mealHistory = buildMealHistory(ss);
 
   // NEW: Index by submission ID instead of by email
@@ -418,7 +424,7 @@ function buildMealIndex(ss) {
     const row = values[i];
     const email = normalizeEmail(row[emailCol]);
     const mealName = String(row[mealCol] || '').trim();
-    const submissionId = String(row[idCol] || '').trim();
+    const submissionId = idDisplay[i];
 
     if (!email || !mealName || !submissionId) {
       Logger.log(`⚠️  Row ${i + 2}: Skipping - missing email, meal name, or submission ID`);
