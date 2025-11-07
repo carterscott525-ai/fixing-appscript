@@ -1211,23 +1211,69 @@ This is an automated response from your coaching platform.
 function markReadyToSend() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const range = sheet.getActiveRange();
-  const row = range.getRow();
+  const sheetName = sheet.getName();
 
-  if (row < 2) {
-    SpreadsheetApp.getUi().alert('Please select a data row (not header)');
+  // Check if it's a valid sheet
+  if (sheetName !== 'Timeline Master' && sheetName !== 'General Questions and Feedback') {
+    SpreadsheetApp.getUi().alert('This function only works in Timeline Master or General Questions and Feedback tabs');
     return;
   }
 
-  const sheetName = sheet.getName();
+  // Determine which columns to check based on sheet
+  const statusCol = sheetName === 'Timeline Master' ? 14 : 5;
+  const responseCol = sheetName === 'Timeline Master' ? 13 : 4;
 
-  if (sheetName === 'Timeline Master') {
-    sheet.getRange(row, 14).setValue('Ready to Send');
-    SpreadsheetApp.getUi().alert('Marked as Ready to Send!');
-  } else if (sheetName === 'General Questions and Feedback') {
-    sheet.getRange(row, 5).setValue('Ready to Send');
-    SpreadsheetApp.getUi().alert('Marked as Ready to Send!');
+  // Get selection details
+  const startRow = range.getRow();
+  const numRows = range.getNumRows();
+
+  // Skip if only header selected
+  if (startRow === 1 && numRows === 1) {
+    SpreadsheetApp.getUi().alert('Please select data rows (not just the header)');
+    return;
+  }
+
+  // Adjust if header is included in selection
+  const firstDataRow = startRow === 1 ? 2 : startRow;
+  const rowsToProcess = startRow === 1 ? numRows - 1 : numRows;
+
+  if (rowsToProcess < 1) {
+    SpreadsheetApp.getUi().alert('Please select at least one data row');
+    return;
+  }
+
+  // Read Coach Response and Status columns for selected rows (batch read)
+  const responseData = sheet.getRange(firstDataRow, responseCol, rowsToProcess, 1).getValues();
+  const statusData = sheet.getRange(firstDataRow, statusCol, rowsToProcess, 1).getValues();
+
+  // Build array of updates
+  let updatedCount = 0;
+  const newStatusValues = [];
+
+  for (let i = 0; i < rowsToProcess; i++) {
+    const coachResponse = String(responseData[i][0] || '').trim();
+
+    if (coachResponse) {
+      // Has response, mark as Ready to Send
+      newStatusValues.push(['Ready to Send']);
+      updatedCount++;
+    } else {
+      // No response, keep current status (or default to Pending Review)
+      const currentStatus = statusData[i][0] || 'Pending Review';
+      newStatusValues.push([currentStatus]);
+    }
+  }
+
+  // Write all updates in one batch operation
+  if (newStatusValues.length > 0) {
+    sheet.getRange(firstDataRow, statusCol, rowsToProcess, 1).setValues(newStatusValues);
+  }
+
+  // Show confirmation alert
+  if (updatedCount > 0) {
+    SpreadsheetApp.getUi().alert(`✓ Marked ${updatedCount} row(s) as "Ready to Send"!`);
   } else {
-    SpreadsheetApp.getUi().alert('This function only works in Timeline Master or Questions tab');
+    SpreadsheetApp.getUi().alert('No rows updated. Selected rows must have a Coach Response to mark as "Ready to Send".');
   }
 }
 
