@@ -55,7 +55,7 @@ const OUTPUT_TABS = new Set([
 const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
-  'Category', 'Gym Score', 'Micronutrient Score',
+  'Category', 'Fuel Score', 'Recovery Score', 'Gym Score', 'Micronutrient Score',
   'Sets/Reps', 'Notes',
   'Coach Response', 'Status', 'Week', 'Month', 'Submission ID'
 ];
@@ -123,7 +123,7 @@ function setupCoachMaster() {
   // Create Timeline Master
   let timeline = getOrCreateSheet_(ss, 'Timeline Master', TIMELINE_HEADERS, '#1976D2');
   addCategoryValidation_(timeline, 10); // Category column
-  addStatusValidation_(timeline, 16); // Status column
+  addStatusValidation_(timeline, 18); // Status column
   formatDateTimeColumn_(timeline, 1); // DateTime column
   Logger.log(`✓ Timeline Master ready`);
 
@@ -1093,9 +1093,9 @@ function buildTimelineMaster(ss) {
   // Get existing entries
   const existing = new Set();
   if (timeline.getLastRow() > 1) {
-    const existingData = timeline.getRange(2, 1, timeline.getLastRow() - 1, 19).getValues();
+    const existingData = timeline.getRange(2, 1, timeline.getLastRow() - 1, 21).getValues();
     existingData.forEach(row => {
-      const submissionId = String(row[18] || '').trim();
+      const submissionId = String(row[20] || '').trim();
       const email = String(row[2] || '').trim();
       const dateTime = row[0];
 
@@ -1138,7 +1138,7 @@ function buildTimelineMaster(ss) {
 
       const ingredients = [coreIngredients, addedIngredients].filter(x => x).join(', ');
 
-      // 19 columns total
+      // 21 columns total
       newEntries.push([
         submissionTime,           // 1. DateTime
         'Meal',                   // 2. Type
@@ -1150,15 +1150,17 @@ function buildTimelineMaster(ss) {
         portions,                 // 8. Portions
         cookingMethod,            // 9. Cooking Method
         '',                       // 10. Category
-        '',                       // 11. Gym Score
-        '',                       // 12. Micronutrient Score
-        '',                       // 13. Sets/Reps
-        '',                       // 14. Notes
-        '',                       // 15. Coach Response
-        'Pending Review',         // 16. Status
-        week,                     // 17. Week
-        month,                    // 18. Month
-        submissionId              // 19. Submission ID
+        '',                       // 11. Fuel Score
+        '',                       // 12. Recovery Score
+        '',                       // 13. Gym Score
+        '',                       // 14. Micronutrient Score
+        '',                       // 15. Sets/Reps
+        '',                       // 16. Notes
+        '',                       // 17. Coach Response
+        'Pending Review',         // 18. Status
+        week,                     // 19. Week
+        month,                    // 20. Month
+        submissionId              // 21. Submission ID
       ]);
     });
   }
@@ -1179,7 +1181,7 @@ function buildTimelineMaster(ss) {
       const week = getWeekNumber_(dateTime);
       const month = Utilities.formatDate(dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
-      // 19 columns total
+      // 21 columns total
       newEntries.push([
         dateTime,                 // 1. DateTime
         'Workout',                // 2. Type
@@ -1191,27 +1193,29 @@ function buildTimelineMaster(ss) {
         '',                       // 8. Portions
         '',                       // 9. Cooking Method
         '',                       // 10. Category
-        workout.gymScore || '',   // 11. Gym Score
-        '',                       // 12. Micronutrient Score
-        '',                       // 13. Sets/Reps
-        workout.notes || '',      // 14. Notes
-        '',                       // 15. Coach Response
-        'Pending Review',         // 16. Status
-        week,                     // 17. Week
-        month,                    // 18. Month
-        submissionId              // 19. Submission ID
+        '',                       // 11. Fuel Score
+        '',                       // 12. Recovery Score
+        workout.gymScore || '',   // 13. Gym Score
+        '',                       // 14. Micronutrient Score
+        '',                       // 15. Sets/Reps
+        workout.notes || '',      // 16. Notes
+        '',                       // 17. Coach Response
+        'Pending Review',         // 18. Status
+        week,                     // 19. Week
+        month,                    // 20. Month
+        submissionId              // 21. Submission ID
       ]);
     });
   }
 
   if (newEntries.length > 0) {
     const nextRow = timeline.getLastRow() + 1;
-    timeline.getRange(nextRow, 1, newEntries.length, 19).setValues(newEntries);
+    timeline.getRange(nextRow, 1, newEntries.length, 21).setValues(newEntries);
     formatDateTimeColumn_(timeline, 1);
 
     // Sort by DateTime desc
     if (timeline.getLastRow() > 2) {
-      timeline.getRange(2, 1, timeline.getLastRow() - 1, 19)
+      timeline.getRange(2, 1, timeline.getLastRow() - 1, 21)
         .sort({ column: 1, ascending: false });
     }
 
@@ -1232,11 +1236,11 @@ function sendPendingResponses(ss) {
 
   // Send Timeline responses
   if (timeline && timeline.getLastRow() > 1) {
-    const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 19).getValues();
+    const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 21).getValues();
 
     for (let i = 0; i < data.length; i++) {
-      const response = String(data[i][14] || '').trim(); // Coach Response column
-      const status = String(data[i][15] || '').trim();   // Status column
+      const response = String(data[i][16] || '').trim(); // Coach Response column
+      const status = String(data[i][17] || '').trim();   // Status column
 
       if (response && status === 'Ready to Send') {
         const email = String(data[i][2] || '').trim();
@@ -1247,7 +1251,7 @@ function sendPendingResponses(ss) {
         const sent = sendResponseEmail_(email, type, details, dateTime, response);
 
         if (sent) {
-          timeline.getRange(i + 2, 16).setValue('Sent'); // Status column
+          timeline.getRange(i + 2, 18).setValue('Sent'); // Status column
           emailsSent++;
         }
       }
@@ -1342,8 +1346,8 @@ function markReadyToSend() {
   }
 
   // Determine which columns to check based on sheet
-  const statusCol = sheetName === 'Timeline Master' ? 16 : 5; // Status column
-  const responseCol = sheetName === 'Timeline Master' ? 15 : 4; // Coach Response column
+  const statusCol = sheetName === 'Timeline Master' ? 18 : 5; // Status column
+  const responseCol = sheetName === 'Timeline Master' ? 17 : 4; // Coach Response column
 
   // Get selection details
   const startRow = range.getRow();
@@ -1418,7 +1422,7 @@ function archiveOldEntries(ss) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - ARCHIVE_AFTER_DAYS);
 
-  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 19).getValues();
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 21).getValues();
   const toArchive = [];
   const rowsToDelete = [];
 
@@ -1432,7 +1436,7 @@ function archiveOldEntries(ss) {
 
   if (toArchive.length > 0) {
     const nextRow = archive.getLastRow() + 1;
-    archive.getRange(nextRow, 1, toArchive.length, 19).setValues(toArchive);
+    archive.getRange(nextRow, 1, toArchive.length, 21).setValues(toArchive);
     formatDateTimeColumn_(archive, 1);
 
     // Delete from timeline in reverse order
