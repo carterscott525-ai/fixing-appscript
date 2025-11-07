@@ -1458,6 +1458,17 @@ function getOrCreateSheet_(ss, name, headers, color) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
     formatHeader_(sheet, headers.length, color);
+  } else {
+    // Update headers if they don't match (for existing sheets)
+    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getMaxColumns()).getValues()[0];
+    const currentHeaderCount = currentHeaders.filter(h => h !== '').length;
+
+    if (currentHeaderCount !== headers.length) {
+      // Headers mismatch - update the header row
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      formatHeader_(sheet, headers.length, color);
+      Logger.log(`  ⚠️ Updated ${name} headers from ${currentHeaderCount} to ${headers.length} columns`);
+    }
   }
 
   return sheet;
