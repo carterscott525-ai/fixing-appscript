@@ -1530,3 +1530,179 @@ function getWeekNumber_(date) {
   const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
   return `Week ${weekNo}`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// FIX TIMELINE HEADERS - MIGRATION HELPER
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Fixes Timeline Master headers by inserting missing meal tracking columns
+ * after "Cooking Method" and cleaning up incorrect validation dropdowns.
+ *
+ * Run this manually once to correct the column structure.
+ */
+function fixTimelineHeaders() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const timeline = ss.getSheetByName('Timeline Master');
+
+  if (!timeline) {
+    Logger.log('❌ Timeline Master sheet not found');
+    return;
+  }
+
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('FIXING TIMELINE HEADERS');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  // Expected columns after "Cooking Method" in exact order
+  const expectedColumns = [
+    'Meal Timing Category',
+    'Fuel Score',
+    'Recovery Score',
+    'Other Score',
+    'Notes',
+    'Timing Minutes',
+    'Status',
+    'Last Updated'
+  ];
+
+  // Get current headers
+  const lastCol = timeline.getLastColumn();
+  const headers = timeline.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  Logger.log(`Current columns: ${lastCol}`);
+  Logger.log(`Current headers: ${headers.join(', ')}`);
+
+  // Find "Cooking Method" column
+  let cookingMethodCol = -1;
+  for (let i = 0; i < headers.length; i++) {
+    if (String(headers[i]).trim() === 'Cooking Method') {
+      cookingMethodCol = i + 1; // Convert to 1-based
+      break;
+    }
+  }
+
+  if (cookingMethodCol === -1) {
+    Logger.log('❌ "Cooking Method" column not found');
+    return;
+  }
+
+  Logger.log(`✓ Found "Cooking Method" at column ${cookingMethodCol}`);
+
+  // Check what columns exist after "Cooking Method"
+  const columnsToInsert = [];
+  let insertPosition = cookingMethodCol + 1;
+
+  for (let i = 0; i < expectedColumns.length; i++) {
+    const expectedHeader = expectedColumns[i];
+    const currentColIndex = cookingMethodCol + i;
+    const currentHeader = currentColIndex < headers.length ? String(headers[currentColIndex]).trim() : '';
+
+    if (currentHeader !== expectedHeader) {
+      // Column is missing or incorrect, mark for insertion
+      columnsToInsert.push({ name: expectedHeader, position: insertPosition + i });
+      Logger.log(`  Column "${expectedHeader}" needs to be inserted at position ${insertPosition + i}`);
+    } else {
+      Logger.log(`  ✓ Column "${expectedHeader}" already exists`);
+    }
+  }
+
+  // If all columns exist, skip insertion
+  if (columnsToInsert.length === 0) {
+    Logger.log('✓ All columns already exist in correct order');
+  } else {
+    Logger.log(`\nInserting ${columnsToInsert.length} missing columns...`);
+
+    // Insert columns in reverse order to maintain correct positions
+    for (let i = columnsToInsert.length - 1; i >= 0; i--) {
+      const col = columnsToInsert[i];
+      Logger.log(`  Inserting "${col.name}" at position ${col.position}`);
+
+      // Insert column
+      timeline.insertColumnAfter(cookingMethodCol + i);
+
+      // Set header
+      timeline.getRange(1, col.position, 1, 1).setValue(col.name);
+    }
+
+    Logger.log('✓ Columns inserted successfully');
+  }
+
+  // Format all headers
+  Logger.log('\nFormatting headers...');
+  const headerRange = timeline.getRange(1, 1, 1, timeline.getLastColumn());
+  headerRange
+    .setFontWeight('bold')
+    .setBackground('#1976D2')
+    .setFontColor('#ffffff');
+
+  Logger.log('✓ Headers formatted');
+
+  // Clear all data validations to remove incorrect dropdowns
+  Logger.log('\nCleaning up validation dropdowns...');
+  if (timeline.getMaxRows() > 1) {
+    const dataRange = timeline.getRange(2, 1, timeline.getMaxRows() - 1, timeline.getLastColumn());
+    dataRange.clearDataValidations();
+    Logger.log('✓ Cleared all existing validations');
+  }
+
+  // Re-read headers to get updated positions
+  const updatedHeaders = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
+
+  // Find "Status" column (the new meal tracking status)
+  let statusCol = -1;
+  for (let i = 0; i < updatedHeaders.length; i++) {
+    if (String(updatedHeaders[i]).trim() === 'Status') {
+      statusCol = i + 1; // Convert to 1-based
+      break;
+    }
+  }
+
+  // Find "Response Status" column
+  let responseStatusCol = -1;
+  for (let i = 0; i < updatedHeaders.length; i++) {
+    if (String(updatedHeaders[i]).trim() === 'Response Status') {
+      responseStatusCol = i + 1; // Convert to 1-based
+      break;
+    }
+  }
+
+  // Add validation to "Status" column (meal tracking status)
+  if (statusCol !== -1) {
+    Logger.log(`\nAdding validation to "Status" column (${statusCol})...`);
+    const statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['Not Started', 'In Progress', 'Completed'], true)
+      .setAllowInvalid(false)
+      .build();
+
+    if (timeline.getMaxRows() > 1) {
+      timeline.getRange(2, statusCol, timeline.getMaxRows() - 1, 1).setDataValidation(statusRule);
+      Logger.log('✓ Status validation added');
+    }
+  }
+
+  // Add validation to "Response Status" column
+  if (responseStatusCol !== -1) {
+    Logger.log(`Adding validation to "Response Status" column (${responseStatusCol})...`);
+    const responseRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['Pending Review', 'Ready to Send', 'Sent'], true)
+      .setAllowInvalid(false)
+      .build();
+
+    if (timeline.getMaxRows() > 1) {
+      timeline.getRange(2, responseStatusCol, timeline.getMaxRows() - 1, 1).setDataValidation(responseRule);
+      Logger.log('✓ Response Status validation added');
+    }
+  }
+
+  Logger.log('\n═══════════════════════════════════════════════════════════');
+  Logger.log('TIMELINE HEADERS FIXED SUCCESSFULLY');
+  Logger.log(`Final column count: ${timeline.getLastColumn()}`);
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  SpreadsheetApp.getUi().alert(
+    'Timeline Headers Fixed!',
+    `✓ Columns corrected\n✓ Headers formatted\n✓ Validation dropdowns fixed\n\nTotal columns: ${timeline.getLastColumn()}`,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
