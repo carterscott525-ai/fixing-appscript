@@ -53,10 +53,9 @@ const OUTPUT_TABS = new Set([
 // ═══════════════════════════════════════════════════════════════════════
 
 const TIMELINE_HEADERS = [
-  'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
+  'DateTime', 'Gym Score', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
-  'Category', 'Fuel Score', 'Recovery Score', 'Gym Score', 'Micronutrient Score',
-  'Sets/Reps', 'Notes',
+  'Category', 'Notes',
   'Coach Response', 'Status', 'Week', 'Month', 'Submission ID'
 ];
 
@@ -90,7 +89,7 @@ const CLIENT_DETAILS_HEADERS = [
 
 const WORKOUT_POOL_HEADERS = [
   'Client Email', 'Submission Time', 'Exercise', 'Sets', 'Reps',
-  'Weight', 'Bodyweight', 'Notes', 'Submission ID'
+  'Weight', 'Bodyweight', 'Notes', 'Submission ID', 'Gym Score'
 ];
 
 // ═══════════════════════════════════════════════════════════════════════
