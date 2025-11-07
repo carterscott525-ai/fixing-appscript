@@ -55,8 +55,8 @@ const OUTPUT_TABS = new Set([
 const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
-  'Fuel Score', 'Recovery Score',
-  'Exercises', 'Sets/Reps', 'Notes',
+  'Category', 'Gym Score', 'Micronutrient Score',
+  'Sets/Reps', 'Notes',
   'Coach Response', 'Status', 'Week', 'Month', 'Submission ID'
 ];
 
@@ -122,6 +122,7 @@ function setupCoachMaster() {
 
   // Create Timeline Master
   let timeline = getOrCreateSheet_(ss, 'Timeline Master', TIMELINE_HEADERS, '#1976D2');
+  addCategoryValidation_(timeline, 10); // Category column
   addStatusValidation_(timeline, 16); // Status column
   formatDateTimeColumn_(timeline, 1); // DateTime column
   Logger.log(`✓ Timeline Master ready`);
@@ -192,6 +193,95 @@ function setupCoachMaster() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// MIGRATION FUNCTION
+// ═══════════════════════════════════════════════════════════════════════
+
+function migrateTimelineColumnsOnce() {
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('TIMELINE MIGRATION STARTED');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const timeline = ss.getSheetByName('Timeline Master');
+  const archive = ss.getSheetByName('Timeline Archive');
+
+  if (!timeline) {
+    Logger.log('⚠️ Timeline Master not found');
+    return;
+  }
+
+  [timeline, archive].forEach(sheet => {
+    if (!sheet || sheet.getLastRow() < 1) return;
+
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const headersLower = headers.map(h => String(h).toLowerCase().trim());
+
+    // Find key columns
+    const cookingMethodIdx = headersLower.indexOf('cooking method');
+    const exercisesIdx = headersLower.indexOf('exercises');
+    const fuelScoreIdx = headersLower.indexOf('fuel score');
+    const recoveryScoreIdx = headersLower.indexOf('recovery score');
+
+    if (cookingMethodIdx === -1) {
+      Logger.log(`⚠️ ${sheet.getName()}: Cooking Method column not found`);
+      return;
+    }
+
+    // Check if migration needed
+    const needsMigration = (exercisesIdx !== -1) || (fuelScoreIdx !== -1) || (recoveryScoreIdx !== -1);
+
+    if (!needsMigration) {
+      Logger.log(`✓ ${sheet.getName()}: Already migrated`);
+      return;
+    }
+
+    Logger.log(`  Migrating ${sheet.getName()}...`);
+
+    // Clear all validations first
+    if (sheet.getMaxRows() > 1 && sheet.getMaxColumns() > 0) {
+      sheet.getRange(2, 1, sheet.getMaxRows() - 1, sheet.getMaxColumns()).clearDataValidations();
+    }
+
+    // Determine target structure
+    const targetHeaders = TIMELINE_HEADERS;
+    const currentColCount = headers.length;
+    const targetColCount = targetHeaders.length;
+
+    if (currentColCount === targetColCount) {
+      // Same column count - just rename headers
+      sheet.getRange(1, 1, 1, targetColCount).setValues([targetHeaders]);
+    } else if (currentColCount > targetColCount) {
+      // Need to delete extra columns
+      const colsToDelete = currentColCount - targetColCount;
+      for (let i = 0; i < colsToDelete; i++) {
+        sheet.deleteColumn(targetColCount + 1);
+      }
+      sheet.getRange(1, 1, 1, targetColCount).setValues([targetHeaders]);
+    } else {
+      // Need to insert columns after Cooking Method
+      const colsToInsert = targetColCount - currentColCount;
+      for (let i = 0; i < colsToInsert; i++) {
+        sheet.insertColumnAfter(cookingMethodIdx + 1);
+      }
+      sheet.getRange(1, 1, 1, targetColCount).setValues([targetHeaders]);
+    }
+
+    // Add validations
+    addCategoryValidation_(sheet, 10);
+    addStatusValidation_(sheet, 16);
+    formatDateTimeColumn_(sheet, 1);
+
+    Logger.log(`  ✓ ${sheet.getName()} migrated`);
+  });
+
+  Logger.log('');
+  Logger.log('Migration complete!');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  SpreadsheetApp.getUi().alert('✓ Timeline migration complete!');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // CUSTOM MENU
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -203,6 +293,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
+    .addSeparator()
+    .addItem('Run Timeline Migration', 'migrateTimelineColumnsOnce')
     .addToUi();
 }
 
@@ -840,6 +932,7 @@ function parseWorkoutsDynamic_(workoutSheet) {
   const bodyweightCol = findColumn_(headers, ['bodyweight', 'body weight', 'weight']);
   const notesCol = findColumn_(headers, ['notes', 'note', 'comments']);
   const idCol = findColumn_(headers, SUBMISSION_ID_LABELS);
+  const gymScoreCol = findColumn_(headers, ['gym score', 'gymscore']);
 
   if (emailCol === -1 || timestampCol === -1) {
     Logger.log('⚠️ Workout sheet missing required columns (Email, Timestamp)');
@@ -856,6 +949,7 @@ function parseWorkoutsDynamic_(workoutSheet) {
     const email = normalizeEmail_(row[emailCol]);
     const timeValue = row[timestampCol];
     const bodyweight = bodyweightCol !== -1 ? String(row[bodyweightCol] || '').trim() : '';
+    const bodyweightNum = bodyweightCol !== -1 ? parseFloat(row[bodyweightCol]) : 0;
     const notes = notesCol !== -1 ? String(row[notesCol] || '').trim() : '';
     const submissionId = idCol !== -1 ? String(row[idCol] || '').trim() : '';
 
@@ -864,21 +958,45 @@ function parseWorkoutsDynamic_(workoutSheet) {
     const dateTime = parseTimestamp(timeValue, spreadsheetTZ);
     if (!dateTime) return;
 
-    // Detect exercise columns
-    const exercises = detectExercises_(headers, row, exerciseDict);
+    // Check for explicit Gym Score column
+    let gymScore = '';
+    if (gymScoreCol !== -1) {
+      const scoreVal = row[gymScoreCol];
+      if (scoreVal !== null && scoreVal !== undefined && scoreVal !== '') {
+        gymScore = String(scoreVal).trim();
+      }
+    }
 
-    exercises.forEach(ex => {
-      results.push({
-        email: email,
-        dateTime: dateTime,
-        name: ex.name,
-        sets: ex.sets,
-        reps: ex.reps,
-        weight: ex.weight,
-        bodyweight: bodyweight,
-        notes: notes,
-        submissionId: submissionId
+    // If no explicit gym score, calculate from exercises
+    if (!gymScore) {
+      const exercises = detectExercises_(headers, row, exerciseDict);
+      let maxEstimate = 0;
+
+      exercises.forEach(ex => {
+        const weight = parseFloat(ex.weight) || 0;
+        const reps = parseFloat(ex.reps) || 0;
+
+        if (weight > 0 && reps > 0) {
+          const estimate = Math.round(weight * (1 + reps / 30));
+          if (estimate > maxEstimate) maxEstimate = estimate;
+        } else if (bodyweightNum > 0 && reps > 0) {
+          const estimate = Math.round(bodyweightNum * (1 + reps / 30));
+          if (estimate > maxEstimate) maxEstimate = estimate;
+        }
       });
+
+      if (maxEstimate > 0) {
+        gymScore = String(maxEstimate);
+      }
+    }
+
+    results.push({
+      email: email,
+      dateTime: dateTime,
+      gymScore: gymScore,
+      bodyweight: bodyweight,
+      notes: notes,
+      submissionId: submissionId
     });
   });
 
@@ -1031,9 +1149,9 @@ function buildTimelineMaster(ss) {
         ingredients,              // 7. Ingredients
         portions,                 // 8. Portions
         cookingMethod,            // 9. Cooking Method
-        '',                       // 10. Fuel Score
-        '',                       // 11. Recovery Score
-        '',                       // 12. Exercises
+        '',                       // 10. Category
+        '',                       // 11. Gym Score
+        '',                       // 12. Micronutrient Score
         '',                       // 13. Sets/Reps
         '',                       // 14. Notes
         '',                       // 15. Coach Response
@@ -1061,8 +1179,6 @@ function buildTimelineMaster(ss) {
       const week = getWeekNumber_(dateTime);
       const month = Utilities.formatDate(dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
-      const setsReps = workout.sets && workout.reps ? `${workout.sets}x${workout.reps}` : workout.reps;
-
       // 19 columns total
       newEntries.push([
         dateTime,                 // 1. DateTime
@@ -1070,15 +1186,15 @@ function buildTimelineMaster(ss) {
         email,                    // 3. Client Email
         clientName,               // 4. Client Name
         '',                       // 5. Image URL
-        workout.name,             // 6. Details
+        'Workout',                // 6. Details
         '',                       // 7. Ingredients
         '',                       // 8. Portions
         '',                       // 9. Cooking Method
-        '',                       // 10. Fuel Score
-        '',                       // 11. Recovery Score
-        workout.name,             // 12. Exercises
-        setsReps,                 // 13. Sets/Reps
-        workout.notes,            // 14. Notes
+        '',                       // 10. Category
+        workout.gymScore || '',   // 11. Gym Score
+        '',                       // 12. Micronutrient Score
+        '',                       // 13. Sets/Reps
+        workout.notes || '',      // 14. Notes
         '',                       // 15. Coach Response
         'Pending Review',         // 16. Status
         week,                     // 17. Week
@@ -1462,15 +1578,21 @@ function formatDateTimeColumn_(sheet, colNum) {
 }
 
 function addStatusValidation_(sheet, colNum) {
-  // First, clear ALL data validations from the entire sheet to remove old/rogue validations
-  if (sheet.getMaxRows() > 1 && sheet.getMaxColumns() > 0) {
-    sheet.getRange(2, 1, sheet.getMaxRows() - 1, sheet.getMaxColumns()).clearDataValidations();
-  }
-
   // Now add the correct validation to the Status column
   const rule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['Pending Review', 'Ready to Send', 'Sent'], true)
     .setAllowInvalid(false)
+    .build();
+
+  if (sheet.getMaxRows() > 1) {
+    sheet.getRange(2, colNum, sheet.getMaxRows() - 1, 1).setDataValidation(rule);
+  }
+}
+
+function addCategoryValidation_(sheet, colNum) {
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Pre-Workout', 'Post-Workout', 'Other'], true)
+    .setAllowInvalid(true)
     .build();
 
   if (sheet.getMaxRows() > 1) {
