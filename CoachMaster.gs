@@ -1462,6 +1462,12 @@ function formatDateTimeColumn_(sheet, colNum) {
 }
 
 function addStatusValidation_(sheet, colNum) {
+  // First, clear ALL data validations from the entire sheet to remove old/rogue validations
+  if (sheet.getMaxRows() > 1 && sheet.getMaxColumns() > 0) {
+    sheet.getRange(2, 1, sheet.getMaxRows() - 1, sheet.getMaxColumns()).clearDataValidations();
+  }
+
+  // Now add the correct validation to the Status column
   const rule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['Pending Review', 'Ready to Send', 'Sent'], true)
     .setAllowInvalid(false)
