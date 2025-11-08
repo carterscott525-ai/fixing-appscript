@@ -957,10 +957,11 @@ function parseWorkoutsDynamic_(workoutSheet) {
       }
     }
 
-    // If no explicit gym score, calculate from exercises
+    // If no explicit gym score, calculate average from exercises
     if (!gymScore) {
       const exercises = detectExercises_(headers, row, exerciseDict);
-      let maxEstimate = 0;
+      let totalScore = 0;
+      let exerciseCount = 0;
 
       exercises.forEach(ex => {
         const weight = parseFloat(ex.weight) || 0;
@@ -968,15 +969,17 @@ function parseWorkoutsDynamic_(workoutSheet) {
 
         if (weight > 0 && reps > 0) {
           const estimate = Math.round(weight * (1 + reps / 30));
-          if (estimate > maxEstimate) maxEstimate = estimate;
+          totalScore += estimate;
+          exerciseCount++;
         } else if (bodyweightNum > 0 && reps > 0) {
           const estimate = Math.round(bodyweightNum * (1 + reps / 30));
-          if (estimate > maxEstimate) maxEstimate = estimate;
+          totalScore += estimate;
+          exerciseCount++;
         }
       });
 
-      if (maxEstimate > 0) {
-        gymScore = String(maxEstimate);
+      if (exerciseCount > 0) {
+        gymScore = String(Math.round(totalScore / exerciseCount));
       }
     }
 
