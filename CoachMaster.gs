@@ -304,6 +304,7 @@ function runCoachMasterSync() {
   const ingestCounts = ingestAllSourceTabsIntoPools_(ss);
   Logger.log(`  Meals ingested: ${ingestCounts.meals}`);
   Logger.log(`  Questions ingested: ${ingestCounts.questions}`);
+  Logger.log(`  Workouts ingested: ${ingestCounts.workouts}`);
 
   // Step 2: Build Timeline Master
   Logger.log('\n[STEP 2] Building Timeline Master...');
@@ -367,6 +368,7 @@ function ingestAllSourceTabsIntoPools_(ss) {
   const allSheets = ss.getSheets();
   let mealsIngested = 0;
   let questionsIngested = 0;
+  let workoutsIngested = 0;
 
   allSheets.forEach(sheet => {
     const sheetName = sheet.getName();
@@ -403,9 +405,18 @@ function ingestAllSourceTabsIntoPools_(ss) {
       Logger.log(`  Auto-ingested ${count} questions from "${sheetName}"`);
       return;
     }
+
+    // Check if it's a workout source (has email, timestamp, and exercise signals)
+    if (hasEmail && hasTimestamp && hasExerciseSignals_(headers)) {
+      // It's a workout source
+      const count = ingestWorkoutSource_(ss, sheet, headers);
+      workoutsIngested += count;
+      Logger.log(`  Auto-ingested ${count} workout entries from "${sheetName}"`);
+      return;
+    }
   });
 
-  return { meals: mealsIngested, questions: questionsIngested };
+  return { meals: mealsIngested, questions: questionsIngested, workouts: workoutsIngested };
 }
 
 function ingestMealSource_(ss, sourceSheet, headers) {
@@ -537,6 +548,119 @@ function ingestQuestionsSource_(ss, sourceSheet, headers) {
   }
 
   return newQuestions.length;
+}
+
+function ingestWorkoutSource_(ss, sourceSheet, headers) {
+  const workoutPool = ss.getSheetByName('Workout Pool');
+  if (!workoutPool) return 0;
+
+  const exerciseDict = loadExerciseDictionary_();
+  const spreadsheetTZ = ss.getSpreadsheetTimeZone();
+
+  // Find columns
+  const emailCol = findColumn_(headers, EMAIL_LABELS);
+  const timestampCol = findColumn_(headers, TIMESTAMP_LABELS);
+  const bodyweightCol = findColumn_(headers, ['bodyweight', 'body weight', 'weight']);
+  const notesCol = findColumn_(headers, ['notes', 'note', 'comments']);
+  const idCol = findColumn_(headers, SUBMISSION_ID_LABELS);
+
+  if (emailCol === -1 || timestampCol === -1) return 0;
+
+  // Get existing workouts to avoid duplicates (by email + submission time)
+  const existingWorkouts = new Set();
+  if (workoutPool.getLastRow() > 1) {
+    const existing = workoutPool.getRange(2, 1, workoutPool.getLastRow() - 1, 10).getValues();
+    existing.forEach(row => {
+      const key = `${row[0]}_${row[1]}`; // Client Email_Submission Time
+      existingWorkouts.add(key);
+    });
+  }
+
+  // Read source data
+  const values = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, sourceSheet.getLastColumn()).getValues();
+  const newWorkouts = [];
+
+  values.forEach(row => {
+    const email = normalizeEmail_(row[emailCol]);
+    if (!email) return;
+
+    const timeValue = row[timestampCol];
+    const submissionTime = parseTimestamp(timeValue, spreadsheetTZ);
+    if (!submissionTime) return;
+
+    const key = `${email}_${submissionTime}`;
+    if (existingWorkouts.has(key)) return;
+
+    const bodyweight = bodyweightCol !== -1 ? parseFloat(row[bodyweightCol]) || 0 : 0;
+    const notes = notesCol !== -1 ? String(row[notesCol] || '').trim() : '';
+    const submissionId = idCol !== -1 ? String(row[idCol] || '').trim() : '';
+
+    // Detect exercises and compute scores
+    const exercises = detectExercises_(headers, row, exerciseDict);
+
+    exercises.forEach(ex => {
+      const weight = parseFloat(ex.weight) || 0;
+      const reps = parseFloat(ex.reps) || 0;
+      const sets = parseFloat(ex.sets) || 0;
+
+      let score = 0;
+
+      if (weight > 0 && reps > 0) {
+        // Epley formula
+        score = Math.round(weight * (1 + reps / 30));
+      } else if (bodyweight > 0 && reps > 0) {
+        // Bodyweight exercise
+        score = Math.round(bodyweight * (1 + reps / 30));
+      } else if (reps > 0) {
+        // Fallback: volume score (sets * reps, assume sets=1 if missing)
+        const effectiveSets = sets > 0 ? sets : 1;
+        score = effectiveSets * reps;
+      }
+
+      // Add each exercise as a row in Workout Pool
+      newWorkouts.push([
+        email,
+        submissionTime,
+        ex.name,
+        ex.sets,
+        ex.reps,
+        ex.weight,
+        bodyweight || '',
+        notes,
+        submissionId,
+        score
+      ]);
+    });
+
+    existingWorkouts.add(key);
+  });
+
+  if (newWorkouts.length > 0) {
+    const nextRow = workoutPool.getLastRow() + 1;
+    workoutPool.getRange(nextRow, 1, newWorkouts.length, 10).setValues(newWorkouts);
+    formatDateTimeColumn_(workoutPool, 2);
+  }
+
+  return newWorkouts.length;
+}
+
+function hasExerciseSignals_(headers) {
+  const headersLower = headers.map(h => String(h).toLowerCase().trim());
+
+  // Check for grouped pattern: "Exercise (Sets|Reps|Weight)"
+  const groupedPattern = /\((sets|reps|weight)\)$/i;
+  if (headersLower.some(h => groupedPattern.test(h))) return true;
+
+  // Check for wide schema: numeric columns not named email/date/time/notes/bodyweight/submission/id
+  const skipLabels = ['email', 'time', 'date', 'bodyweight', 'body weight', 'notes', 'submission', 'id', 'name', 'phone', 'question', 'meal'];
+
+  for (let header of headersLower) {
+    if (skipLabels.some(skip => header.includes(skip))) continue;
+    // If we have other columns that might be exercises, consider it a workout tab
+    if (header.length > 0) return true;
+  }
+
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
