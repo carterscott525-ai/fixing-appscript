@@ -87,7 +87,7 @@ const CLIENT_DETAILS_HEADERS = [
 ];
 
 const WORKOUT_POOL_HEADERS = [
-  'Client Email', 'Submission Time', 'Exercise', 'Sets', 'Reps',
+  'Client Email', 'Submission Time', 'Exercise', 'Sets', 'Reps', 'RIR',
   'Weight', 'Bodyweight', 'Notes', 'Submission ID', 'Gym Score'
 ];
 
@@ -569,7 +569,7 @@ function ingestWorkoutSource_(ss, sourceSheet, headers) {
   // Get existing workouts to avoid duplicates (by email + submission time)
   const existingWorkouts = new Set();
   if (workoutPool.getLastRow() > 1) {
-    const existing = workoutPool.getRange(2, 1, workoutPool.getLastRow() - 1, 10).getValues();
+    const existing = workoutPool.getRange(2, 1, workoutPool.getLastRow() - 1, 11).getValues();
     existing.forEach(row => {
       const key = `${row[0]}_${row[1]}`; // Client Email_Submission Time
       existingWorkouts.add(key);
@@ -601,29 +601,34 @@ function ingestWorkoutSource_(ss, sourceSheet, headers) {
     exercises.forEach(ex => {
       const weight = parseFloat(ex.weight) || 0;
       const reps = parseFloat(ex.reps) || 0;
+      const rir = parseFloat(ex.rir) || 0;
       const sets = parseFloat(ex.sets) || 0;
+
+      // Adjust reps with RIR if present (estimates true 1RM capacity)
+      const effectiveReps = rir > 0 ? reps + rir : reps;
 
       let score = 0;
 
       if (weight > 0 && reps > 0) {
-        // Epley formula
-        score = Math.round(weight * (1 + reps / 30));
+        // Epley formula with RIR adjustment
+        score = Math.round(weight * (1 + effectiveReps / 30));
       } else if (bodyweight > 0 && reps > 0) {
-        // Bodyweight exercise
-        score = Math.round(bodyweight * (1 + reps / 30));
+        // Bodyweight exercise with RIR adjustment
+        score = Math.round(bodyweight * (1 + effectiveReps / 30));
       } else if (reps > 0) {
         // Fallback: volume score (sets * reps, assume sets=1 if missing)
         const effectiveSets = sets > 0 ? sets : 1;
         score = effectiveSets * reps;
       }
 
-      // Add each exercise as a row in Workout Pool
+      // Add each exercise as a row in Workout Pool (11 columns with RIR)
       newWorkouts.push([
         email,
         submissionTime,
         ex.name,
         ex.sets,
         ex.reps,
+        ex.rir,
         ex.weight,
         bodyweight || '',
         notes,
@@ -637,7 +642,7 @@ function ingestWorkoutSource_(ss, sourceSheet, headers) {
 
   if (newWorkouts.length > 0) {
     const nextRow = workoutPool.getLastRow() + 1;
-    workoutPool.getRange(nextRow, 1, newWorkouts.length, 10).setValues(newWorkouts);
+    workoutPool.getRange(nextRow, 1, newWorkouts.length, 11).setValues(newWorkouts);
     formatDateTimeColumn_(workoutPool, 2);
   }
 
@@ -647,8 +652,8 @@ function ingestWorkoutSource_(ss, sourceSheet, headers) {
 function hasExerciseSignals_(headers) {
   const headersLower = headers.map(h => String(h).toLowerCase().trim());
 
-  // Check for grouped pattern: "Exercise (Sets|Reps|Weight)"
-  const groupedPattern = /\((sets|reps|weight)\)$/i;
+  // Check for grouped pattern: "Exercise (Sets|Reps|Weight|RIR)"
+  const groupedPattern = /\((sets|reps|weight|rir|reps in reserve)\)$/i;
   if (headersLower.some(h => groupedPattern.test(h))) return true;
 
   // Check for wide schema: numeric columns not named email/date/time/notes/bodyweight/submission/id
@@ -1090,13 +1095,17 @@ function parseWorkoutsDynamic_(workoutSheet) {
       exercises.forEach(ex => {
         const weight = parseFloat(ex.weight) || 0;
         const reps = parseFloat(ex.reps) || 0;
+        const rir = parseFloat(ex.rir) || 0;
+
+        // Adjust reps with RIR if present (estimates true 1RM capacity)
+        const effectiveReps = rir > 0 ? reps + rir : reps;
 
         if (weight > 0 && reps > 0) {
-          const estimate = Math.round(weight * (1 + reps / 30));
+          const estimate = Math.round(weight * (1 + effectiveReps / 30));
           totalScore += estimate;
           exerciseCount++;
         } else if (bodyweightNum > 0 && reps > 0) {
-          const estimate = Math.round(bodyweightNum * (1 + reps / 30));
+          const estimate = Math.round(bodyweightNum * (1 + effectiveReps / 30));
           totalScore += estimate;
           exerciseCount++;
         }
@@ -1124,15 +1133,18 @@ function detectExercises_(headers, row, exerciseDict) {
   const exercises = [];
   const processedCols = new Set();
 
-  // Pattern 1: Grouped triplets - "Exercise (Sets)", "Exercise (Reps)", "Exercise (Weight)"
-  const groupedPattern = /^(.+?)\s*\((sets|reps|weight)\)$/i;
+  // Pattern 1: Grouped format - "Exercise (Sets)", "Exercise (Reps)", "Exercise (Weight)", "Exercise (RIR)"
+  const groupedPattern = /^(.+?)\s*\((sets|reps|weight|rir|reps in reserve)\)$/i;
   const grouped = new Map();
 
   headers.forEach((header, idx) => {
     const match = String(header).match(groupedPattern);
     if (match) {
       const exerciseName = match[1].trim();
-      const metric = match[2].toLowerCase();
+      let metric = match[2].toLowerCase();
+
+      // Normalize "reps in reserve" to "rir"
+      if (metric === 'reps in reserve') metric = 'rir';
 
       if (!grouped.has(exerciseName)) {
         grouped.set(exerciseName, {});
@@ -1148,6 +1160,7 @@ function detectExercises_(headers, row, exerciseDict) {
       name: canonicalName,
       sets: String(metrics.sets || '').trim(),
       reps: String(metrics.reps || '').trim(),
+      rir: String(metrics.rir || '').trim(),
       weight: String(metrics.weight || '').trim()
     });
   });
@@ -1168,6 +1181,7 @@ function detectExercises_(headers, row, exerciseDict) {
         name: canonicalName,
         sets: '',
         reps: String(value).trim(),
+        rir: '',
         weight: ''
       });
     }
