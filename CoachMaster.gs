@@ -53,7 +53,7 @@ const OUTPUT_TABS = new Set([
 // ═══════════════════════════════════════════════════════════════════════
 
 const TIMELINE_HEADERS = [
-  'DateTime', 'Gym Score', 'Client Email', 'Client Name', 'Image URL',
+  'DateTime', 'Gym Score', 'Client Email', 'Client Name', 'Image URL', 'Meal Name',
   'Ingredients', 'Portions', 'Cooking Method', 'Type', 'Notes',
   'Coach Response', 'Status', 'Week', 'Month', 'Submission ID'
 ];
@@ -1226,7 +1226,7 @@ function buildTimelineMaster(ss) {
   if (timeline.getLastRow() > 1) {
     const existingData = timeline.getRange(2, 1, timeline.getLastRow() - 1, TIMELINE_HEADERS.length).getValues();
     existingData.forEach(row => {
-      const submissionId = String(row[14] || '').trim(); // Submission ID is column 15 (index 14)
+      const submissionId = String(row[15] || '').trim(); // Submission ID is column 16 (index 15)
       const email = String(row[2] || '').trim();
       const dateTime = row[0];
 
@@ -1269,23 +1269,24 @@ function buildTimelineMaster(ss) {
 
       const ingredients = [coreIngredients, addedIngredients].filter(x => x).join(', ');
 
-      // 15 columns: DateTime, Gym Score, Client Email, Client Name, Image URL, Ingredients, Portions, Cooking Method, Type, Notes, Coach Response, Status, Week, Month, Submission ID
+      // 16 columns: DateTime, Gym Score, Client Email, Client Name, Image URL, Meal Name, Ingredients, Portions, Cooking Method, Type, Notes, Coach Response, Status, Week, Month, Submission ID
       newEntries.push([
         submissionTime,           // 1. DateTime
         '',                       // 2. Gym Score (blank for meals)
         email,                    // 3. Client Email
         clientName,               // 4. Client Name
         imageUrl,                 // 5. Image URL
-        ingredients,              // 6. Ingredients
-        portions,                 // 7. Portions
-        cookingMethod,            // 8. Cooking Method
-        'Meal',                   // 9. Type
-        '',                       // 10. Notes
-        '',                       // 11. Coach Response
-        'Pending Review',         // 12. Status
-        week,                     // 13. Week
-        month,                    // 14. Month
-        submissionId              // 15. Submission ID
+        mealName,                 // 6. Meal Name
+        ingredients,              // 7. Ingredients
+        portions,                 // 8. Portions
+        cookingMethod,            // 9. Cooking Method
+        'Meal',                   // 10. Type
+        '',                       // 11. Notes
+        '',                       // 12. Coach Response
+        'Pending Review',         // 13. Status
+        week,                     // 14. Week
+        month,                    // 15. Month
+        submissionId              // 16. Submission ID
       ]);
     });
   }
@@ -1306,23 +1307,24 @@ function buildTimelineMaster(ss) {
       const week = getWeekNumber_(dateTime);
       const month = Utilities.formatDate(dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
-      // 15 columns: DateTime, Gym Score, Client Email, Client Name, Image URL, Ingredients, Portions, Cooking Method, Type, Notes, Coach Response, Status, Week, Month, Submission ID
+      // 16 columns: DateTime, Gym Score, Client Email, Client Name, Image URL, Meal Name, Ingredients, Portions, Cooking Method, Type, Notes, Coach Response, Status, Week, Month, Submission ID
       newEntries.push([
         dateTime,                 // 1. DateTime
         workout.gymScore || '',   // 2. Gym Score
         email,                    // 3. Client Email
         clientName,               // 4. Client Name
         '',                       // 5. Image URL (blank for workouts)
-        '',                       // 6. Ingredients (blank for workouts)
-        '',                       // 7. Portions (blank for workouts)
-        '',                       // 8. Cooking Method (blank for workouts)
-        'Other',                  // 9. Type (default to 'Other', user can change to Pre/Post-Workout)
-        workout.notes || '',      // 10. Notes
-        '',                       // 11. Coach Response
-        'Pending Review',         // 12. Status
-        week,                     // 13. Week
-        month,                    // 14. Month
-        submissionId              // 15. Submission ID
+        '',                       // 6. Meal Name (blank for workouts)
+        '',                       // 7. Ingredients (blank for workouts)
+        '',                       // 8. Portions (blank for workouts)
+        '',                       // 9. Cooking Method (blank for workouts)
+        'Other',                  // 10. Type (default to 'Other', user can change to Pre/Post-Workout)
+        workout.notes || '',      // 11. Notes
+        '',                       // 12. Coach Response
+        'Pending Review',         // 13. Status
+        week,                     // 14. Week
+        month,                    // 15. Month
+        submissionId              // 16. Submission ID
       ]);
     });
   }
@@ -1358,19 +1360,20 @@ function sendPendingResponses(ss) {
     const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, TIMELINE_HEADERS.length).getValues();
 
     for (let i = 0; i < data.length; i++) {
-      const response = String(data[i][10] || '').trim(); // Coach Response column (index 10)
-      const status = String(data[i][11] || '').trim();   // Status column (index 11)
+      const response = String(data[i][11] || '').trim(); // Coach Response column (index 11)
+      const status = String(data[i][12] || '').trim();   // Status column (index 12)
 
       if (response && status === 'Ready to Send') {
         const email = String(data[i][2] || '').trim();   // Client Email (index 2)
-        const type = String(data[i][8] || '').trim();    // Type (index 8)
-        const ingredients = String(data[i][5] || '').trim(); // Ingredients (index 5)
+        const type = String(data[i][9] || '').trim();    // Type (index 9)
+        const mealName = String(data[i][5] || '').trim(); // Meal Name (index 5)
+        const ingredients = String(data[i][6] || '').trim(); // Ingredients (index 6)
         const dateTime = data[i][0];
 
-        const sent = sendResponseEmail_(email, type, ingredients, dateTime, response);
+        const sent = sendResponseEmail_(email, type, mealName, ingredients, dateTime, response);
 
         if (sent) {
-          timeline.getRange(i + 2, 12).setValue('Sent'); // Status column is column 12 (1-based)
+          timeline.getRange(i + 2, 13).setValue('Sent'); // Status column is column 13 (1-based)
           emailsSent++;
         }
       }
@@ -1403,9 +1406,19 @@ function sendPendingResponses(ss) {
   return emailsSent;
 }
 
-function sendResponseEmail_(clientEmail, type, details, dateTime, response) {
+function sendResponseEmail_(clientEmail, type, mealName, ingredients, dateTime, response) {
   try {
+    // TODO: Make email template customizable by coaches
     const subject = `${EMAIL_SUBJECT_PREFIX} - ${type} (${dateTime})`;
+
+    let details = '';
+    if (type === 'Meal' && mealName) {
+      details = `Meal: ${mealName}`;
+      if (ingredients) details += `\nIngredients: ${ingredients}`;
+    } else if (type !== 'Meal') {
+      details = 'Workout session';
+    }
+
     const body = `
 Hi,
 
@@ -1465,8 +1478,8 @@ function markReadyToSend() {
   }
 
   // Determine which columns to check based on sheet
-  const statusCol = sheetName === 'Timeline Master' ? 12 : 5; // Status column (col 12 for Timeline, col 5 for Questions)
-  const responseCol = sheetName === 'Timeline Master' ? 11 : 4; // Coach Response column (col 11 for Timeline, col 4 for Questions)
+  const statusCol = sheetName === 'Timeline Master' ? 13 : 5; // Status column (col 13 for Timeline, col 5 for Questions)
+  const responseCol = sheetName === 'Timeline Master' ? 12 : 4; // Coach Response column (col 12 for Timeline, col 4 for Questions)
 
   // Get selection details
   const startRow = range.getRow();
