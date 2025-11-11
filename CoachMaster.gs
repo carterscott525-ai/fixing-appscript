@@ -45,7 +45,9 @@ const OUTPUT_TABS = new Set([
   'General Questions and Feedback',
   'Client Details',
   'Exercise Dictionary',
-  'Meal Image+Info'
+  'Meal Image+Info',
+  'Lead Pool',
+  'Lead Dashboard'
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -94,21 +96,36 @@ const WORKOUT_POOL_HEADERS = [
   'Weight', 'Bodyweight', 'Notes', 'Submission ID'
 ];
 
+const LEAD_POOL_HEADERS = [
+  'Lead Email', 'Lead Name', 'Submission Time', 'Meal Name',
+  'Core Ingredients', 'Added Ingredients', 'Cooking Method',
+  'Portions', 'Image URL', 'Question/Goal', 'Submission ID'
+];
+
+const LEAD_DASHBOARD_HEADERS = [
+  'Lead Email', 'Lead Name', 'First Contact', 'Free Demos Given',
+  'Last Demo Date', 'Call Booked', 'Call Date', 'Call Completed',
+  'Converted to Client', 'Conversion Date', 'Lead Source', 'Status', 'Notes'
+];
+
 // ═══════════════════════════════════════════════════════════════════════
 // LABEL SYNONYMS FOR AUTO-DISCOVERY
 // ═══════════════════════════════════════════════════════════════════════
 
-const EMAIL_LABELS = ['client email', 'email', 'email address', 'e-mail'];
+const EMAIL_LABELS = ['client email', 'lead email', 'email', 'email address', 'e-mail'];
+const NAME_LABELS = ['name', 'full name', 'lead name', 'client name'];
 const TIMESTAMP_LABELS = ['submission time', 'submitted time', 'timestamp', 'submitted at', 'date time', 'datetime', 'date', 'time'];
 const MEAL_NAME_LABELS = ['meal name', 'meal', 'name', 'meal_name'];
 const CORE_LABELS = ['core ingredients', 'ingredients', 'main ingredients', 'ingredient list'];
 const ADDED_LABELS = ['added ingredients', 'additional ingredients', 'extra ingredients'];
 const METHOD_LABELS = ['cooking method', 'method', 'preparation method', 'prep method'];
 const PORTIONS_LABELS = ['portions', 'portion', 'serving', 'servings'];
-const QUESTION_LABELS = ['question', 'message', 'text'];
+const QUESTION_LABELS = ['question', 'message', 'text', 'goal', 'goals'];
 const SUBMISSION_ID_LABELS = ['submission id', 'response id', 'id'];
 const DATE_LABELS = ['submission date', 'date', 'submitted date'];
 const TIME_LABELS = ['time', 'submission time', 'submitted time'];
+const IMAGE_LABELS = ['image url', 'image', 'photo', 'photo url', 'picture'];
+const LEAD_SOURCE_LABELS = ['lead source', 'source', 'referral source', 'how did you hear'];
 
 // ═══════════════════════════════════════════════════════════════════════
 // SETUP FUNCTION - RUN THIS FIRST
@@ -168,6 +185,26 @@ function setupCoachMaster() {
   }
   Logger.log(`✓ Exercise Dictionary ready`);
 
+  // Create Lead Pool
+  let leadPool = getOrCreateSheet_(ss, 'Lead Pool', LEAD_POOL_HEADERS, '#F4511E');
+  formatDateTimeColumn_(leadPool, 3); // Submission Time column
+  Logger.log(`✓ Lead Pool ready`);
+
+  // Create Lead Dashboard
+  let leadDashboard = getOrCreateSheet_(ss, 'Lead Dashboard', LEAD_DASHBOARD_HEADERS, '#E67C73');
+  const statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['New Lead', 'Demo Sent', 'Call Booked', 'Call Completed', 'Converted', 'Lost'], true)
+    .setAllowInvalid(false)
+    .build();
+  if (leadDashboard.getMaxRows() > 1) {
+    leadDashboard.getRange(2, 12, leadDashboard.getMaxRows() - 1, 1).setDataValidation(statusRule); // Status column
+  }
+  formatDateTimeColumn_(leadDashboard, 3); // First Contact column
+  formatDateTimeColumn_(leadDashboard, 5); // Last Demo Date column
+  formatDateTimeColumn_(leadDashboard, 7); // Call Date column
+  formatDateTimeColumn_(leadDashboard, 10); // Conversion Date column
+  Logger.log(`✓ Lead Dashboard ready`);
+
   // Remove old triggers
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(trigger => {
@@ -204,6 +241,9 @@ function onOpen() {
     .addItem('Mark Selected as "Ready to Send"', 'markReadyToSend')
     .addItem('Send All Ready Responses', 'sendAllReadyResponses')
     .addSeparator()
+    .addItem('Convert Lead to Client', 'convertLeadToClient')
+    .addItem('Mark Call Booked', 'markCallBooked')
+    .addSeparator()
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
     .addToUi();
@@ -225,18 +265,24 @@ function runCoachMasterSync() {
   const ingestCounts = ingestAllSourceTabsIntoPools_(ss);
   Logger.log(`  Meals ingested: ${ingestCounts.meals}`);
   Logger.log(`  Questions ingested: ${ingestCounts.questions}`);
+  Logger.log(`  Leads ingested: ${ingestCounts.leads}`);
 
-  // Step 2: Build Timeline Master
-  Logger.log('\n[STEP 2] Building Timeline Master...');
+  // Step 2: Update Lead Dashboard
+  Logger.log('\n[STEP 2] Updating Lead Dashboard...');
+  const leadsUpdated = updateLeadDashboard_(ss);
+  Logger.log(`  Lead records updated: ${leadsUpdated}`);
+
+  // Step 3: Build Timeline Master
+  Logger.log('\n[STEP 3] Building Timeline Master...');
   buildTimelineMaster(ss);
 
-  // Step 3: Send responses
-  Logger.log('\n[STEP 3] Sending pending responses...');
+  // Step 4: Send responses
+  Logger.log('\n[STEP 4] Sending pending responses...');
   const emailsSent = sendPendingResponses(ss);
   Logger.log(`  Emails sent: ${emailsSent}`);
 
-  // Step 4: Archive old entries
-  Logger.log('\n[STEP 4] Archiving old entries...');
+  // Step 5: Archive old entries
+  Logger.log('\n[STEP 5] Archiving old entries...');
   const archived = archiveOldEntries(ss);
   Logger.log(`  Entries archived: ${archived}`);
 
@@ -288,6 +334,7 @@ function ingestAllSourceTabsIntoPools_(ss) {
   const allSheets = ss.getSheets();
   let mealsIngested = 0;
   let questionsIngested = 0;
+  let leadsIngested = 0;
 
   allSheets.forEach(sheet => {
     const sheetName = sheet.getName();
@@ -301,13 +348,28 @@ function ingestAllSourceTabsIntoPools_(ss) {
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const headersLower = headers.map(h => String(h).toLowerCase().trim());
 
-    // Check if it's a meal source
-    const hasMealName = headersLower.some(h => MEAL_NAME_LABELS.some(label => h.includes(label)));
     const hasEmail = headersLower.some(h => EMAIL_LABELS.some(label => h === label || h.includes(label)));
     const hasTimestamp = headersLower.some(h => TIMESTAMP_LABELS.some(label => h.includes(label)));
+    const hasMealName = headersLower.some(h => MEAL_NAME_LABELS.some(label => h.includes(label)));
+    const hasQuestion = headersLower.some(h => QUESTION_LABELS.some(label => h.includes(label)));
+    const hasLeadSource = headersLower.some(h => LEAD_SOURCE_LABELS.some(label => h.includes(label)));
+    const hasName = headersLower.some(h => NAME_LABELS.some(label => h.includes(label)));
 
+    // Check if it's a lead source (has lead-specific markers)
+    if (hasEmail && hasTimestamp && (hasLeadSource || (hasName && hasMealName))) {
+      // Check if it has "lead" in any column name to distinguish from client forms
+      const hasLeadMarker = headersLower.some(h => h.includes('lead'));
+
+      if (hasLeadMarker || hasLeadSource) {
+        const count = ingestLeadSource_(ss, sheet, headers);
+        leadsIngested += count;
+        Logger.log(`  Auto-ingested ${count} leads from "${sheetName}"`);
+        return;
+      }
+    }
+
+    // Check if it's a meal source (client meal tracking)
     if (hasMealName && hasEmail && hasTimestamp) {
-      // It's a meal source
       const count = ingestMealSource_(ss, sheet, headers);
       mealsIngested += count;
       Logger.log(`  Auto-ingested ${count} meals from "${sheetName}"`);
@@ -315,10 +377,7 @@ function ingestAllSourceTabsIntoPools_(ss) {
     }
 
     // Check if it's a questions source
-    const hasQuestion = headersLower.some(h => QUESTION_LABELS.some(label => h.includes(label)));
-
     if (hasQuestion && hasEmail && hasTimestamp) {
-      // It's a questions source
       const count = ingestQuestionsSource_(ss, sheet, headers);
       questionsIngested += count;
       Logger.log(`  Auto-ingested ${count} questions from "${sheetName}"`);
@@ -326,7 +385,7 @@ function ingestAllSourceTabsIntoPools_(ss) {
     }
   });
 
-  return { meals: mealsIngested, questions: questionsIngested };
+  return { meals: mealsIngested, questions: questionsIngested, leads: leadsIngested };
 }
 
 function ingestMealSource_(ss, sourceSheet, headers) {
@@ -458,6 +517,260 @@ function ingestQuestionsSource_(ss, sourceSheet, headers) {
   }
 
   return newQuestions.length;
+}
+
+function ingestLeadSource_(ss, sourceSheet, headers) {
+  const leadPool = ss.getSheetByName('Lead Pool');
+  if (!leadPool) return 0;
+
+  // Find columns
+  const emailCol = findColumn_(headers, EMAIL_LABELS);
+  const nameCol = findColumn_(headers, NAME_LABELS);
+  const timestampCol = findColumn_(headers, TIMESTAMP_LABELS);
+  const mealNameCol = findColumn_(headers, MEAL_NAME_LABELS);
+  const coreCol = findColumn_(headers, CORE_LABELS);
+  const addedCol = findColumn_(headers, ADDED_LABELS);
+  const methodCol = findColumn_(headers, METHOD_LABELS);
+  const portionsCol = findColumn_(headers, PORTIONS_LABELS);
+  const imageCol = findColumn_(headers, IMAGE_LABELS);
+  const questionCol = findColumn_(headers, QUESTION_LABELS);
+  const idCol = findColumn_(headers, SUBMISSION_ID_LABELS);
+
+  if (emailCol === -1 || timestampCol === -1) return 0;
+
+  // Get existing leads in pool to avoid duplicates
+  const existingLeads = new Set();
+  if (leadPool.getLastRow() > 1) {
+    const existing = leadPool.getRange(2, 1, leadPool.getLastRow() - 1, 3).getValues();
+    existing.forEach(row => {
+      const key = `${row[0]}_${row[2]}`; // Email_SubmissionTime
+      existingLeads.add(key);
+    });
+  }
+
+  // Read source data
+  const values = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, sourceSheet.getLastColumn()).getValues();
+  const newLeads = [];
+  const spreadsheetTZ = ss.getSpreadsheetTimeZone();
+
+  values.forEach(row => {
+    const email = normalizeEmail_(row[emailCol]);
+    const name = nameCol !== -1 ? String(row[nameCol] || '').trim() : '';
+    const timeValue = row[timestampCol];
+    const mealName = mealNameCol !== -1 ? String(row[mealNameCol] || '').trim() : '';
+    const core = coreCol !== -1 ? String(row[coreCol] || '').trim() : '';
+    const added = addedCol !== -1 ? String(row[addedCol] || '').trim() : '';
+    const method = methodCol !== -1 ? String(row[methodCol] || '').trim() : '';
+    const portions = portionsCol !== -1 ? String(row[portionsCol] || '').trim() : '';
+    const imageUrl = imageCol !== -1 ? String(row[imageCol] || '').trim() : '';
+    const question = questionCol !== -1 ? String(row[questionCol] || '').trim() : '';
+    const submissionId = idCol !== -1 ? String(row[idCol] || '').trim() : '';
+
+    if (!email) return;
+
+    const submissionTime = parseTimestamp(timeValue, spreadsheetTZ);
+    if (!submissionTime) return;
+
+    const key = `${email}_${submissionTime}`;
+    if (existingLeads.has(key)) return;
+
+    newLeads.push([
+      email,               // Lead Email
+      name,                // Lead Name
+      submissionTime,      // Submission Time
+      mealName,            // Meal Name
+      core,                // Core Ingredients
+      added,               // Added Ingredients
+      method,              // Cooking Method
+      portions,            // Portions
+      imageUrl,            // Image URL
+      question,            // Question/Goal
+      submissionId         // Submission ID
+    ]);
+  });
+
+  if (newLeads.length > 0) {
+    const nextRow = leadPool.getLastRow() + 1;
+    leadPool.getRange(nextRow, 1, newLeads.length, 11).setValues(newLeads);
+    formatDateTimeColumn_(leadPool, 3);
+  }
+
+  return newLeads.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LEAD MANAGEMENT: UPDATE DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════
+
+function updateLeadDashboard_(ss) {
+  const leadPool = ss.getSheetByName('Lead Pool');
+  const leadDashboard = ss.getSheetByName('Lead Dashboard');
+
+  if (!leadPool || leadPool.getLastRow() <= 1) return 0;
+  if (!leadDashboard) return 0;
+
+  // Get existing lead records
+  const existingLeads = new Map();
+  if (leadDashboard.getLastRow() > 1) {
+    const existing = leadDashboard.getRange(2, 1, leadDashboard.getLastRow() - 1, 13).getValues();
+    existing.forEach((row, idx) => {
+      const email = normalizeEmail_(row[0]);
+      if (email) {
+        existingLeads.set(email, {
+          rowIndex: idx + 2,
+          data: row
+        });
+      }
+    });
+  }
+
+  // Read all leads from pool
+  const leads = leadPool.getRange(2, 1, leadPool.getLastRow() - 1, 11).getValues();
+  const leadStats = new Map();
+
+  // Aggregate stats per email
+  leads.forEach(lead => {
+    const email = normalizeEmail_(lead[0]);
+    const name = lead[1] || '';
+    const submissionTime = lead[2];
+
+    if (!email) return;
+
+    if (!leadStats.has(email)) {
+      leadStats.set(email, {
+        name: name,
+        firstContact: submissionTime,
+        lastDemo: submissionTime,
+        demoCount: 1
+      });
+    } else {
+      const stats = leadStats.get(email);
+      stats.demoCount++;
+      if (submissionTime > stats.lastDemo) {
+        stats.lastDemo = submissionTime;
+      }
+      if (submissionTime < stats.firstContact) {
+        stats.firstContact = submissionTime;
+      }
+      if (!stats.name && name) {
+        stats.name = name;
+      }
+    }
+  });
+
+  const newRows = [];
+  const updates = [];
+
+  // Process each lead
+  leadStats.forEach((stats, email) => {
+    if (existingLeads.has(email)) {
+      // Update existing record
+      const existing = existingLeads.get(email);
+      const rowIndex = existing.rowIndex;
+
+      // Update Free Demos Given and Last Demo Date
+      leadDashboard.getRange(rowIndex, 4).setValue(stats.demoCount); // Free Demos Given
+      leadDashboard.getRange(rowIndex, 5).setValue(stats.lastDemo); // Last Demo Date
+
+      updates.push(email);
+    } else {
+      // Create new record
+      newRows.push([
+        email,              // Lead Email
+        stats.name,         // Lead Name
+        stats.firstContact, // First Contact
+        stats.demoCount,    // Free Demos Given
+        stats.lastDemo,     // Last Demo Date
+        'No',               // Call Booked
+        '',                 // Call Date
+        'No',               // Call Completed
+        'No',               // Converted to Client
+        '',                 // Conversion Date
+        '',                 // Lead Source
+        'New Lead',         // Status
+        ''                  // Notes
+      ]);
+    }
+  });
+
+  if (newRows.length > 0) {
+    const nextRow = leadDashboard.getLastRow() + 1;
+    leadDashboard.getRange(nextRow, 1, newRows.length, 13).setValues(newRows);
+    formatDateTimeColumn_(leadDashboard, 3);
+    formatDateTimeColumn_(leadDashboard, 5);
+    formatDateTimeColumn_(leadDashboard, 7);
+    formatDateTimeColumn_(leadDashboard, 10);
+  }
+
+  return newRows.length + updates.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LEAD CONVERSION: MENU FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════
+
+function convertLeadToClient() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const sheetName = sheet.getName();
+
+  if (sheetName !== 'Lead Dashboard') {
+    SpreadsheetApp.getUi().alert('This function only works in the Lead Dashboard tab. Please select a lead row first.');
+    return;
+  }
+
+  const activeRow = sheet.getActiveRange().getRow();
+  if (activeRow === 1) {
+    SpreadsheetApp.getUi().alert('Please select a lead row (not the header)');
+    return;
+  }
+
+  // Update the lead record
+  const now = new Date();
+  sheet.getRange(activeRow, 9).setValue('Yes'); // Converted to Client
+  sheet.getRange(activeRow, 10).setValue(now); // Conversion Date
+  sheet.getRange(activeRow, 12).setValue('Converted'); // Status
+
+  SpreadsheetApp.getUi().alert('✓ Lead marked as converted to client!');
+}
+
+function markCallBooked() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const sheetName = sheet.getName();
+
+  if (sheetName !== 'Lead Dashboard') {
+    SpreadsheetApp.getUi().alert('This function only works in the Lead Dashboard tab. Please select a lead row first.');
+    return;
+  }
+
+  const activeRow = sheet.getActiveRange().getRow();
+  if (activeRow === 1) {
+    SpreadsheetApp.getUi().alert('Please select a lead row (not the header)');
+    return;
+  }
+
+  // Prompt for call date
+  const ui = SpreadsheetApp.getUi();
+  const result = ui.prompt(
+    'Book Call',
+    'Enter call date/time (e.g., "2025-01-15 2:00 PM"):',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (result.getSelectedButton() === ui.Button.OK) {
+    const callDateStr = result.getResponseText();
+    const callDate = new Date(callDateStr);
+
+    if (isNaN(callDate.getTime())) {
+      ui.alert('Invalid date format. Please try again.');
+      return;
+    }
+
+    sheet.getRange(activeRow, 6).setValue('Yes'); // Call Booked
+    sheet.getRange(activeRow, 7).setValue(callDate); // Call Date
+    sheet.getRange(activeRow, 12).setValue('Call Booked'); // Status
+
+    ui.alert('✓ Call booked successfully!');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
