@@ -225,6 +225,7 @@ function runCoachMasterSync() {
   const ingestCounts = ingestAllSourceTabsIntoPools_(ss);
   Logger.log(`  Meals ingested: ${ingestCounts.meals}`);
   Logger.log(`  Questions ingested: ${ingestCounts.questions}`);
+  Logger.log(`  Workouts ingested: ${ingestCounts.workouts}`);
 
   // Step 2: Build Timeline Master
   Logger.log('\n[STEP 2] Building Timeline Master...');
@@ -288,6 +289,7 @@ function ingestAllSourceTabsIntoPools_(ss) {
   const allSheets = ss.getSheets();
   let mealsIngested = 0;
   let questionsIngested = 0;
+  let workoutsIngested = 0;
 
   allSheets.forEach(sheet => {
     const sheetName = sheet.getName();
@@ -324,9 +326,30 @@ function ingestAllSourceTabsIntoPools_(ss) {
       Logger.log(`  Auto-ingested ${count} questions from "${sheetName}"`);
       return;
     }
+
+    // Check if it's a workout source
+    // Pattern 1: Grouped triplets - "Exercise (Sets)", "Exercise (Reps)", "Exercise (Weight)"
+    const groupedPattern = /^(.+?)\s*\((sets|reps|weight)\)$/i;
+    const hasGroupedExercises = headersLower.some(h => groupedPattern.test(h));
+
+    // Pattern 2: Wide schema indicators - has bodyweight, sets, reps columns, or common exercise names
+    const hasBodyweight = headersLower.some(h => h.includes('bodyweight') || h.includes('body weight'));
+    const hasSetsOrReps = headersLower.some(h => h === 'sets' || h === 'reps' || h.includes('sets') || h.includes('reps'));
+    const exerciseKeywords = ['squat', 'bench', 'press', 'pull', 'push', 'curl', 'row', 'deadlift', 'lunge', 'dip'];
+    const hasExerciseNames = headersLower.some(h => exerciseKeywords.some(keyword => h.includes(keyword)));
+
+    const isWorkoutSource = (hasGroupedExercises || (hasBodyweight && (hasSetsOrReps || hasExerciseNames))) && hasEmail && hasTimestamp;
+
+    if (isWorkoutSource) {
+      // It's a workout source
+      const count = ingestWorkoutSource_(ss, sheet, headers);
+      workoutsIngested += count;
+      Logger.log(`  Auto-ingested ${count} workouts from "${sheetName}"`);
+      return;
+    }
   });
 
-  return { meals: mealsIngested, questions: questionsIngested };
+  return { meals: mealsIngested, questions: questionsIngested, workouts: workoutsIngested };
 }
 
 function ingestMealSource_(ss, sourceSheet, headers) {
@@ -458,6 +481,54 @@ function ingestQuestionsSource_(ss, sourceSheet, headers) {
   }
 
   return newQuestions.length;
+}
+
+function ingestWorkoutSource_(ss, sourceSheet, headers) {
+  const workoutPool = ss.getSheetByName('Workout Pool');
+  if (!workoutPool) return 0;
+
+  // Get existing workouts to avoid duplicates
+  const existingWorkouts = new Set();
+  if (workoutPool.getLastRow() > 1) {
+    const existing = workoutPool.getRange(2, 1, workoutPool.getLastRow() - 1, 9).getValues();
+    existing.forEach(row => {
+      const submissionTime = row[0];
+      const email = row[1];
+      const exercise = row[2];
+      const submissionId = String(row[8] || '').trim();
+      const key = `${submissionTime}_${email}_${exercise}_${submissionId}`; // SubmissionTime_Email_Exercise_SubmissionID
+      existingWorkouts.add(key);
+    });
+  }
+
+  // Use existing parseWorkoutsDynamic_() function to parse workouts
+  const workouts = parseWorkoutsDynamic_(sourceSheet);
+  const newWorkouts = [];
+
+  workouts.forEach(workout => {
+    const key = `${workout.dateTime}_${workout.email}_${workout.name}_${workout.submissionId}`;
+    if (existingWorkouts.has(key)) return;
+
+    newWorkouts.push([
+      workout.dateTime,
+      workout.email,
+      workout.name,
+      workout.sets,
+      workout.reps,
+      workout.weight,
+      workout.bodyweight,
+      workout.notes,
+      workout.submissionId
+    ]);
+  });
+
+  if (newWorkouts.length > 0) {
+    const nextRow = workoutPool.getLastRow() + 1;
+    workoutPool.getRange(nextRow, 1, newWorkouts.length, 9).setValues(newWorkouts);
+    formatDateTimeColumn_(workoutPool, 1);
+  }
+
+  return newWorkouts.length;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -963,6 +1034,56 @@ function loadExerciseDictionary_() {
   return dict;
 }
 
+function calculateGymScore_(workouts, defaultBodyweight) {
+  // Calculate Gym Score using Epley formula: 1RM = weight × (1 + reps/30)
+  // Average all 1RMs across all exercises and sets
+
+  if (!workouts || workouts.length === 0) return 0;
+
+  const all1RMs = [];
+
+  workouts.forEach(workout => {
+    const sets = String(workout.sets || '').trim();
+    const reps = String(workout.reps || '').trim();
+    const weight = String(workout.weight || '').trim();
+    const bodyweight = workout.bodyweight || defaultBodyweight || 0;
+
+    // Determine which weight to use for this exercise
+    const effectiveWeight = weight ? parseFloat(weight.replace(/[^\d.]/g, '')) : parseFloat(bodyweight);
+
+    if (!effectiveWeight || effectiveWeight <= 0) return; // Skip if no valid weight
+
+    // Parse reps (can be comma-separated for multiple sets)
+    const repsArray = reps.split(',').map(r => {
+      const parsed = parseFloat(r.trim().replace(/[^\d.]/g, ''));
+      return isNaN(parsed) ? 0 : parsed;
+    }).filter(r => r > 0);
+
+    // Parse weights if comma-separated (for grouped format)
+    const weightsArray = weight ? weight.split(',').map(w => {
+      const parsed = parseFloat(w.trim().replace(/[^\d.]/g, ''));
+      return isNaN(parsed) ? effectiveWeight : parsed;
+    }) : [];
+
+    // Calculate 1RM for each set
+    repsArray.forEach((repCount, index) => {
+      const setWeight = weightsArray.length > index ? weightsArray[index] : effectiveWeight;
+      if (setWeight > 0 && repCount > 0) {
+        const oneRM = setWeight * (1 + repCount / 30);
+        all1RMs.push(oneRM);
+      }
+    });
+  });
+
+  // Average all 1RMs
+  if (all1RMs.length === 0) return 0;
+
+  const sum = all1RMs.reduce((acc, val) => acc + val, 0);
+  const average = sum / all1RMs.length;
+
+  return Math.round(average * 100) / 100; // Round to 2 decimal places
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // BUILD TIMELINE MASTER
 // ═══════════════════════════════════════════════════════════════════════
@@ -1054,41 +1175,62 @@ function buildTimelineMaster(ss) {
     });
   }
 
-  // Pull workouts
+  // Pull workouts and calculate Gym Score
   if (workoutPool) {
     const workouts = parseWorkoutsDynamic_(workoutPool);
+
+    // Group workouts by submission (dateTime_email_submissionId)
+    const workoutGroups = new Map();
 
     workouts.forEach(workout => {
       const email = workout.email;
       const dateTime = workout.dateTime;
       const submissionId = workout.submissionId || '';
-
       const key = submissionId ? `${dateTime}_${email}_${submissionId}` : `${dateTime}_${email}`;
+
+      if (!workoutGroups.has(key)) {
+        workoutGroups.set(key, {
+          email: email,
+          dateTime: dateTime,
+          submissionId: submissionId,
+          exercises: []
+        });
+      }
+
+      workoutGroups.get(key).exercises.push(workout);
+    });
+
+    // Create one Timeline entry per workout submission with Gym Score
+    workoutGroups.forEach((group, key) => {
       if (existing.has(key)) return;
 
-      const clientName = clientNames.get(email) || '';
-      const week = getWeekNumber_(dateTime);
-      const month = Utilities.formatDate(dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
+      const clientName = clientNames.get(group.email) || '';
+      const week = getWeekNumber_(group.dateTime);
+      const month = Utilities.formatDate(group.dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
-      // Determine weight display: check workout.weight (NOT workout.bodyweight)
-      // If workout.weight is empty/null/undefined → use "Bodyweight"
-      // If workout.weight has any value → use that value
-      const weightValue = String(workout.weight || '').trim();
-      const weightDisplay = weightValue ? weightValue : 'Bodyweight';
+      // Calculate Gym Score using Epley formula
+      const defaultBodyweight = group.exercises[0]?.bodyweight || 0;
+      const gymScore = calculateGymScore_(group.exercises, defaultBodyweight);
 
-      // Format exercise name with weight
-      const exerciseWithWeight = `${workout.name} (${weightDisplay})`;
+      // Build exercise summary for Exercises column
+      const exerciseNames = group.exercises.map(ex => ex.name).join(', ');
 
-      const setsReps = workout.sets && workout.reps ? `${workout.sets}x${workout.reps}` : workout.reps;
+      // Build detailed notes for Workout Notes column
+      const workoutDetails = group.exercises.map(ex => {
+        const weightValue = String(ex.weight || '').trim();
+        const weightDisplay = weightValue ? weightValue : 'Bodyweight';
+        const setsReps = ex.sets && ex.reps ? `${ex.sets}x${ex.reps}` : ex.reps;
+        return `${ex.name} (${weightDisplay}): ${setsReps}`;
+      }).join(' | ');
 
       // 25 columns total
       newEntries.push([
-        dateTime,                 // 1. DateTime
+        group.dateTime,           // 1. Submission Time
         'Workout',                // 2. Type
-        email,                    // 3. Client Email
+        group.email,              // 3. Client Email
         clientName,               // 4. Client Name
         '',                       // 5. Image URL
-        exerciseWithWeight,       // 6. Details (now includes weight classification)
+        `Gym Score: ${gymScore}`, // 6. Details (Gym Score)
         '',                       // 7. Ingredients
         '',                       // 8. Portions
         '',                       // 9. Cooking Method
@@ -1100,14 +1242,14 @@ function buildTimelineMaster(ss) {
         '',                       // 15. Timing Minutes
         '',                       // 16. Meal Status
         '',                       // 17. Last Updated
-        exerciseWithWeight,       // 18. Exercises (now includes weight classification)
-        setsReps,                 // 19. Sets/Reps
-        workout.notes,            // 20. Workout Notes
+        exerciseNames,            // 18. Exercises (comma-separated list)
+        '',                       // 19. Sets/Reps (left empty, details in Workout Notes)
+        workoutDetails,           // 20. Workout Notes (detailed breakdown)
         '',                       // 21. Coach Response
         'Pending Review',         // 22. Response Status
         week,                     // 23. Week
         month,                    // 24. Month
-        submissionId              // 25. Submission ID
+        group.submissionId        // 25. Submission ID
       ]);
     });
   }
