@@ -291,63 +291,97 @@ function ingestAllSourceTabsIntoPools_(ss) {
   let questionsIngested = 0;
   let workoutsIngested = 0;
 
+  Logger.log('\n[DEBUG] Scanning all sheets for data sources...');
+
   allSheets.forEach(sheet => {
     const sheetName = sheet.getName();
 
+    Logger.log(`\n[DEBUG] Checking sheet: "${sheetName}"`);
+
     // Skip output/managed tabs
-    if (OUTPUT_TABS.has(sheetName)) return;
+    if (OUTPUT_TABS.has(sheetName)) {
+      Logger.log(`  → Skipped (output tab)`);
+      return;
+    }
 
     // Skip if no data
-    if (sheet.getLastRow() <= 1) return;
+    if (sheet.getLastRow() <= 1) {
+      Logger.log(`  → Skipped (no data)`);
+      return;
+    }
 
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const headersLower = headers.map(h => String(h).toLowerCase().trim());
 
-    // Check if it's a meal source
-    const hasMealName = headersLower.some(h => MEAL_NAME_LABELS.some(label => h.includes(label)));
+    Logger.log(`  → Headers: ${JSON.stringify(headers)}`);
+
+    // Check basic requirements
     const hasEmail = headersLower.some(h => EMAIL_LABELS.some(label => h === label || h.includes(label)));
     const hasTimestamp = headersLower.some(h => TIMESTAMP_LABELS.some(label => h.includes(label)));
 
+    Logger.log(`  → hasEmail: ${hasEmail}`);
+    Logger.log(`  → hasTimestamp: ${hasTimestamp}`);
+
+    // Check if it's a meal source
+    const hasMealName = headersLower.some(h => MEAL_NAME_LABELS.some(label => h.includes(label)));
+    Logger.log(`  → hasMealName: ${hasMealName}`);
+
     if (hasMealName && hasEmail && hasTimestamp) {
-      // It's a meal source
+      Logger.log(`  → DETECTED AS MEAL SOURCE`);
       const count = ingestMealSource_(ss, sheet, headers);
       mealsIngested += count;
-      Logger.log(`  Auto-ingested ${count} meals from "${sheetName}"`);
+      Logger.log(`  → Ingested ${count} meals`);
       return;
     }
 
     // Check if it's a questions source
     const hasQuestion = headersLower.some(h => QUESTION_LABELS.some(label => h.includes(label)));
+    Logger.log(`  → hasQuestion: ${hasQuestion}`);
 
     if (hasQuestion && hasEmail && hasTimestamp) {
-      // It's a questions source
+      Logger.log(`  → DETECTED AS QUESTION SOURCE`);
       const count = ingestQuestionsSource_(ss, sheet, headers);
       questionsIngested += count;
-      Logger.log(`  Auto-ingested ${count} questions from "${sheetName}"`);
+      Logger.log(`  → Ingested ${count} questions`);
       return;
     }
 
-    // Check if it's a workout source
-    // Pattern 1: Grouped triplets - "Exercise (Sets)", "Exercise (Reps)", "Exercise (Weight)"
-    const groupedPattern = /^(.+?)\s*\((sets|reps|weight)\)$/i;
-    const hasGroupedExercises = headersLower.some(h => groupedPattern.test(h));
+    // Check if it's a workout source - SIMPLIFIED LOGIC
+    // A tab is a workout source if it has: Email + Timestamp + (Bodyweight OR Sets)
+    const hasBodyweight = headersLower.some(h =>
+      h === 'bodyweight' ||
+      h === 'body weight' ||
+      h === 'current bodyweight' ||
+      h.includes('bodyweight')
+    );
 
-    // Pattern 2: Wide schema indicators - has bodyweight, sets, reps columns, or common exercise names
-    const hasBodyweight = headersLower.some(h => h.includes('bodyweight') || h.includes('body weight'));
-    const hasSetsOrReps = headersLower.some(h => h === 'sets' || h === 'reps' || h.includes('sets') || h.includes('reps'));
-    const exerciseKeywords = ['squat', 'bench', 'press', 'pull', 'push', 'curl', 'row', 'deadlift', 'lunge', 'dip'];
-    const hasExerciseNames = headersLower.some(h => exerciseKeywords.some(keyword => h.includes(keyword)));
+    const hasSets = headersLower.some(h =>
+      h === 'sets' ||
+      h.includes('(sets)') ||
+      h.includes('sets')
+    );
 
-    const isWorkoutSource = (hasGroupedExercises || (hasBodyweight && (hasSetsOrReps || hasExerciseNames))) && hasEmail && hasTimestamp;
+    const isWorkoutSource = (hasBodyweight || hasSets) && hasEmail && hasTimestamp;
+
+    Logger.log(`  → hasBodyweight: ${hasBodyweight}`);
+    Logger.log(`  → hasSets: ${hasSets}`);
+    Logger.log(`  → isWorkoutSource: ${isWorkoutSource}`);
 
     if (isWorkoutSource) {
-      // It's a workout source
+      Logger.log(`  → DETECTED AS WORKOUT SOURCE`);
       const count = ingestWorkoutSource_(ss, sheet, headers);
       workoutsIngested += count;
-      Logger.log(`  Auto-ingested ${count} workouts from "${sheetName}"`);
+      Logger.log(`  → Ingested ${count} workouts`);
       return;
     }
+
+    Logger.log(`  → NOT DETECTED AS ANY SOURCE TYPE`);
   });
+
+  Logger.log(`\n[DEBUG] Ingestion Summary:`);
+  Logger.log(`  Meals: ${mealsIngested}`);
+  Logger.log(`  Questions: ${questionsIngested}`);
+  Logger.log(`  Workouts: ${workoutsIngested}`);
 
   return { meals: mealsIngested, questions: questionsIngested, workouts: workoutsIngested };
 }
@@ -484,8 +518,13 @@ function ingestQuestionsSource_(ss, sourceSheet, headers) {
 }
 
 function ingestWorkoutSource_(ss, sourceSheet, headers) {
+  Logger.log(`\n[DEBUG ingestWorkoutSource_] Starting for sheet: ${sourceSheet.getName()}`);
+
   const workoutPool = ss.getSheetByName('Workout Pool');
-  if (!workoutPool) return 0;
+  if (!workoutPool) {
+    Logger.log(`  [ERROR] Workout Pool sheet not found!`);
+    return 0;
+  }
 
   // Get existing workouts to avoid duplicates
   const existingWorkouts = new Set();
@@ -500,9 +539,17 @@ function ingestWorkoutSource_(ss, sourceSheet, headers) {
       existingWorkouts.add(key);
     });
   }
+  Logger.log(`  → Found ${existingWorkouts.size} existing workouts in pool`);
 
   // Use existing parseWorkoutsDynamic_() function to parse workouts
+  Logger.log(`  → Calling parseWorkoutsDynamic_()...`);
   const workouts = parseWorkoutsDynamic_(sourceSheet);
+  Logger.log(`  → Parsed ${workouts.length} workout entries`);
+
+  if (workouts.length > 0) {
+    Logger.log(`  → Sample workout: ${JSON.stringify(workouts[0])}`);
+  }
+
   const newWorkouts = [];
 
   workouts.forEach(workout => {
@@ -529,6 +576,86 @@ function ingestWorkoutSource_(ss, sourceSheet, headers) {
   }
 
   return newWorkouts.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TEST FUNCTION: WORKOUT DETECTION
+// ═══════════════════════════════════════════════════════════════════════
+
+function testWorkoutDetection() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Workout Log 1');
+
+  if (!sheet) {
+    Logger.log('ERROR: "Workout Log 1" sheet not found!');
+    Logger.log('Available sheets:');
+    ss.getSheets().forEach(s => Logger.log(`  - ${s.getName()}`));
+    return;
+  }
+
+  Logger.log('Testing "Workout Log 1" detection...\n');
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headersLower = headers.map(h => String(h).toLowerCase().trim());
+
+  Logger.log('Headers: ' + JSON.stringify(headers));
+  Logger.log('\nHeaders (lowercase): ' + JSON.stringify(headersLower));
+
+  // Test Email
+  const hasEmail = headersLower.some(h => EMAIL_LABELS.some(label => h === label || h.includes(label)));
+  Logger.log('\n✓ Has Email: ' + hasEmail);
+  if (hasEmail) {
+    const emailCol = headersLower.findIndex(h => EMAIL_LABELS.some(label => h === label || h.includes(label)));
+    Logger.log('  Email column: ' + headers[emailCol]);
+  }
+
+  // Test Timestamp
+  const hasTimestamp = headersLower.some(h => TIMESTAMP_LABELS.some(label => h.includes(label)));
+  Logger.log('✓ Has Timestamp: ' + hasTimestamp);
+  if (hasTimestamp) {
+    const tsCol = headersLower.findIndex(h => TIMESTAMP_LABELS.some(label => h.includes(label)));
+    Logger.log('  Timestamp column: ' + headers[tsCol]);
+  }
+
+  // Test Bodyweight
+  const hasBodyweight = headersLower.some(h =>
+    h === 'bodyweight' ||
+    h === 'body weight' ||
+    h === 'current bodyweight' ||
+    h.includes('bodyweight')
+  );
+  Logger.log('✓ Has Bodyweight: ' + hasBodyweight);
+  if (hasBodyweight) {
+    const bwCol = headersLower.findIndex(h => h.includes('bodyweight'));
+    Logger.log('  Bodyweight column: ' + headers[bwCol]);
+  }
+
+  // Test Sets
+  const hasSets = headersLower.some(h =>
+    h === 'sets' ||
+    h.includes('(sets)') ||
+    h.includes('sets')
+  );
+  Logger.log('✓ Has Sets: ' + hasSets);
+  if (hasSets) {
+    const setCols = headersLower
+      .map((h, i) => ({ header: h, index: i }))
+      .filter(item => item.header.includes('sets'));
+    Logger.log('  Sets columns: ' + JSON.stringify(setCols.map(c => headers[c.index])));
+  }
+
+  Logger.log('\n=== DETECTION RESULT ===');
+  const isWorkoutSource = (hasBodyweight || hasSets) && hasEmail && hasTimestamp;
+
+  if (isWorkoutSource) {
+    Logger.log('✓✓✓ WOULD BE DETECTED AS WORKOUT SOURCE ✓✓✓');
+  } else {
+    Logger.log('✗✗✗ WOULD NOT BE DETECTED AS WORKOUT SOURCE ✗✗✗');
+    Logger.log('\nMissing requirements:');
+    if (!hasEmail) Logger.log('  ✗ Email column');
+    if (!hasTimestamp) Logger.log('  ✗ Timestamp column');
+    if (!hasBodyweight && !hasSets) Logger.log('  ✗ Bodyweight OR Sets column');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
