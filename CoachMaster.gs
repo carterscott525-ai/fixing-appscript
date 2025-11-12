@@ -1070,6 +1070,15 @@ function buildTimelineMaster(ss) {
       const week = getWeekNumber_(dateTime);
       const month = Utilities.formatDate(dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
+      // Determine weight display: check workout.weight (NOT workout.bodyweight)
+      // If workout.weight is empty/null/undefined → use "Bodyweight"
+      // If workout.weight has any value → use that value
+      const weightValue = String(workout.weight || '').trim();
+      const weightDisplay = weightValue ? weightValue : 'Bodyweight';
+
+      // Format exercise name with weight
+      const exerciseWithWeight = `${workout.name} (${weightDisplay})`;
+
       const setsReps = workout.sets && workout.reps ? `${workout.sets}x${workout.reps}` : workout.reps;
 
       // 25 columns total
@@ -1079,7 +1088,7 @@ function buildTimelineMaster(ss) {
         email,                    // 3. Client Email
         clientName,               // 4. Client Name
         '',                       // 5. Image URL
-        workout.name,             // 6. Details
+        exerciseWithWeight,       // 6. Details (now includes weight classification)
         '',                       // 7. Ingredients
         '',                       // 8. Portions
         '',                       // 9. Cooking Method
@@ -1091,7 +1100,7 @@ function buildTimelineMaster(ss) {
         '',                       // 15. Timing Minutes
         '',                       // 16. Meal Status
         '',                       // 17. Last Updated
-        workout.name,             // 18. Exercises
+        exerciseWithWeight,       // 18. Exercises (now includes weight classification)
         setsReps,                 // 19. Sets/Reps
         workout.notes,            // 20. Workout Notes
         '',                       // 21. Coach Response
