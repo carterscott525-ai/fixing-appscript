@@ -53,7 +53,7 @@ const OUTPUT_TABS = new Set([
 // ═══════════════════════════════════════════════════════════════════════
 
 const TIMELINE_HEADERS = [
-  'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
+  'Submission Time', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
   'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Other Score',
   'Meal Notes', 'Timing Minutes', 'Meal Status', 'Last Updated',
@@ -62,19 +62,19 @@ const TIMELINE_HEADERS = [
 ];
 
 const MEAL_POOL_HEADERS = [
-  'Client Email', 'Image URL', 'Submission Time', 'Meal Name',
+  'Submission Time', 'Client Email', 'Image URL', 'Meal Name',
   'Core Ingredients', 'Added Ingredients', 'Cooking Method',
   'Portions', 'Submission ID'
 ];
 
 const MEAL_IMAGE_INFO_HEADERS = [
-  'Client Email', 'Image URL', 'Submission Time', 'Meal Name',
+  'Submission Time', 'Client Email', 'Image URL', 'Meal Name',
   'Core Ingredients', 'Added Ingredients', 'Cooking Method',
   'Portions', 'Submission ID'
 ];
 
 const QUESTIONS_HEADERS = [
-  'Client Email', 'Submission Time', 'Question',
+  'Submission Time', 'Client Email', 'Question',
   'Coach Response', 'Status', 'Submission ID'
 ];
 
@@ -90,7 +90,7 @@ const CLIENT_DETAILS_HEADERS = [
 ];
 
 const WORKOUT_POOL_HEADERS = [
-  'Client Email', 'Submission Time', 'Exercise', 'Sets', 'Reps',
+  'Submission Time', 'Client Email', 'Exercise', 'Sets', 'Reps',
   'Weight', 'Bodyweight', 'Notes', 'Submission ID'
 ];
 
@@ -123,30 +123,30 @@ function setupCoachMaster() {
 
   // Create Timeline Master with new meal tracking columns
   let timeline = getOrCreateSheet_(ss, 'Timeline Master', TIMELINE_HEADERS, '#1976D2');
-  addStatusValidation_(timeline, 22); // Response Status column (was 14, now 22)
-  formatDateTimeColumn_(timeline, 1); // DateTime column
+  addStatusValidation_(timeline, 22); // Response Status column
+  formatDateTimeColumn_(timeline, 1); // Submission Time column
   formatDateTimeColumn_(timeline, 17); // Last Updated column
   Logger.log(`✓ Timeline Master ready`);
 
   // Create Meal Pool
   let mealPool = getOrCreateSheet_(ss, 'Meal Pool', MEAL_POOL_HEADERS, '#4CAF50');
-  formatDateTimeColumn_(mealPool, 3); // Submission Time column
+  formatDateTimeColumn_(mealPool, 1); // Submission Time column
   Logger.log(`✓ Meal Pool ready`);
 
   // Create Meal Image+Info (staging)
   let mealImageInfo = getOrCreateSheet_(ss, 'Meal Image+Info', MEAL_IMAGE_INFO_HEADERS, '#4CAF50');
-  formatDateTimeColumn_(mealImageInfo, 3); // Submission Time column
+  formatDateTimeColumn_(mealImageInfo, 1); // Submission Time column
   Logger.log(`✓ Meal Image+Info ready`);
 
   // Create Workout Pool
   let workoutPool = getOrCreateSheet_(ss, 'Workout Pool', WORKOUT_POOL_HEADERS, '#FF9800');
-  formatDateTimeColumn_(workoutPool, 2); // Submission Time column
+  formatDateTimeColumn_(workoutPool, 1); // Submission Time column
   Logger.log(`✓ Workout Pool ready`);
 
   // Create Questions tab
   let questions = getOrCreateSheet_(ss, 'General Questions and Feedback', QUESTIONS_HEADERS, '#9C27B0');
   addStatusValidation_(questions, 5); // Status column
-  formatDateTimeColumn_(questions, 2); // Submission Time column
+  formatDateTimeColumn_(questions, 1); // Submission Time column
   Logger.log(`✓ General Questions and Feedback ready`);
 
   // Create Client Details
@@ -350,7 +350,7 @@ function ingestMealSource_(ss, sourceSheet, headers) {
   if (mealPool.getLastRow() > 1) {
     const existing = mealPool.getRange(2, 1, mealPool.getLastRow() - 1, 4).getValues();
     existing.forEach(row => {
-      const key = `${row[0]}_${row[2]}_${row[3]}`; // Email_SubmissionTime_MealName
+      const key = `${row[1]}_${row[0]}_${row[3]}`; // Email_SubmissionTime_MealName (new order: SubmissionTime, Email, ImageURL, MealName)
       existingMeals.add(key);
     });
   }
@@ -379,9 +379,9 @@ function ingestMealSource_(ss, sourceSheet, headers) {
     if (existingMeals.has(key)) return;
 
     newMeals.push([
+      submissionTime,
       email,
       '', // Image URL (will be filled by meal sync)
-      submissionTime,
       mealName,
       core,
       added,
@@ -394,7 +394,7 @@ function ingestMealSource_(ss, sourceSheet, headers) {
   if (newMeals.length > 0) {
     const nextRow = mealPool.getLastRow() + 1;
     mealPool.getRange(nextRow, 1, newMeals.length, 9).setValues(newMeals);
-    formatDateTimeColumn_(mealPool, 3);
+    formatDateTimeColumn_(mealPool, 1);
   }
 
   return newMeals.length;
@@ -417,7 +417,7 @@ function ingestQuestionsSource_(ss, sourceSheet, headers) {
   if (questionsSheet.getLastRow() > 1) {
     const existing = questionsSheet.getRange(2, 1, questionsSheet.getLastRow() - 1, 3).getValues();
     existing.forEach(row => {
-      const key = `${row[0]}_${row[1]}_${row[2]}`; // Email_SubmissionTime_Question
+      const key = `${row[1]}_${row[0]}_${row[2]}`; // Email_SubmissionTime_Question (new order: SubmissionTime, Email, Question)
       existingQuestions.add(key);
     });
   }
@@ -442,8 +442,8 @@ function ingestQuestionsSource_(ss, sourceSheet, headers) {
     if (existingQuestions.has(key)) return;
 
     newQuestions.push([
-      email,
       submissionTime,
+      email,
       question,
       '', // Coach Response
       'Pending Review', // Status
@@ -454,7 +454,7 @@ function ingestQuestionsSource_(ss, sourceSheet, headers) {
   if (newQuestions.length > 0) {
     const nextRow = questionsSheet.getLastRow() + 1;
     questionsSheet.getRange(nextRow, 1, newQuestions.length, 6).setValues(newQuestions);
-    formatDateTimeColumn_(questionsSheet, 2);
+    formatDateTimeColumn_(questionsSheet, 1);
   }
 
   return newQuestions.length;
@@ -622,7 +622,7 @@ function buildMealHistory_(ss) {
   const data = destSheet.getRange(2, 1, destSheet.getLastRow() - 1, 9).getValues();
 
   data.forEach(row => {
-    const email = normalizeEmail_(row[0]);
+    const email = normalizeEmail_(row[1]); // Column 1 is now Email (new order: SubmissionTime, Email, ImageURL...)
     const mealName = String(row[3] || '').trim().toLowerCase();
     const coreIngredients = String(row[4] || '').trim();
     const addedIngredients = String(row[5] || '').trim();
@@ -654,7 +654,7 @@ function scanDriveAndMatch(ss, mealIndex) {
 
   const existingImages = new Set();
   if (destSheet.getLastRow() > 1) {
-    const existing = destSheet.getRange(2, 2, destSheet.getLastRow() - 1, 1).getValues();
+    const existing = destSheet.getRange(2, 3, destSheet.getLastRow() - 1, 1).getValues(); // Column 3 is now Image URL
     existing.forEach(row => {
       if (row[0]) existingImages.add(String(row[0]));
     });
@@ -685,7 +685,7 @@ function scanDriveAndMatch(ss, mealIndex) {
   // Sort by Submission Time desc
   if (destSheet.getLastRow() > 2) {
     destSheet.getRange(2, 1, destSheet.getLastRow() - 1, 9)
-      .sort({ column: 3, ascending: false });
+      .sort({ column: 1, ascending: false }); // Column 1 is now Submission Time
   }
 
   return {
@@ -727,7 +727,7 @@ function processFolder_(folder, parentSubmissionId, mealIndex, destSheet, existi
       stats.unmatched++;
 
       const fileTime = file.getLastUpdated();
-      destSheet.appendRow(['', url, fileTime, '', '', '', '', '', '']);
+      destSheet.appendRow([fileTime, '', url, '', '', '', '', '', '']);
       existingImages.add(url);
       continue;
     }
@@ -737,9 +737,9 @@ function processFolder_(folder, parentSubmissionId, mealIndex, destSheet, existi
     if (meal) {
       const fileTime = file.getLastUpdated();
       destSheet.appendRow([
+        meal.submissionTime,
         meal.email,
         url,
-        meal.submissionTime,
         meal.mealName,
         meal.coreIngredients,
         meal.addedIngredients,
@@ -752,7 +752,7 @@ function processFolder_(folder, parentSubmissionId, mealIndex, destSheet, existi
     } else {
       stats.unmatched++;
       const fileTime = file.getLastUpdated();
-      destSheet.appendRow(['', url, fileTime, '', '', '', '', '', submissionId]);
+      destSheet.appendRow([fileTime, '', url, '', '', '', '', '', submissionId]);
       existingImages.add(url);
     }
   }
@@ -796,7 +796,7 @@ function mirrorFromDestinationToMealPool(ss) {
   if (mealPool.getLastRow() > 1) {
     const existing = mealPool.getRange(2, 1, mealPool.getLastRow() - 1, 4).getValues();
     existing.forEach(row => {
-      const key = `${row[0]}_${row[2]}_${row[3]}`; // Email_SubmissionTime_MealName
+      const key = `${row[1]}_${row[0]}_${row[3]}`; // Email_SubmissionTime_MealName (new order: SubmissionTime, Email, ImageURL, MealName)
       existingMeals.add(key);
     });
   }
@@ -806,9 +806,9 @@ function mirrorFromDestinationToMealPool(ss) {
   const newMeals = [];
 
   data.forEach(row => {
-    const email = row[0];
-    const imageUrl = row[1];
-    const submissionTime = row[2];
+    const submissionTime = row[0];
+    const email = row[1];
+    const imageUrl = row[2];
     const mealName = row[3];
 
     if (!email || !mealName) return; // Skip incomplete rows
@@ -822,7 +822,7 @@ function mirrorFromDestinationToMealPool(ss) {
   if (newMeals.length > 0) {
     const nextRow = mealPool.getLastRow() + 1;
     mealPool.getRange(nextRow, 1, newMeals.length, 9).setValues(newMeals);
-    formatDateTimeColumn_(mealPool, 3);
+    formatDateTimeColumn_(mealPool, 1);
   }
 
   return newMeals.length;
@@ -1003,9 +1003,9 @@ function buildTimelineMaster(ss) {
     const meals = mealPool.getRange(2, 1, mealPool.getLastRow() - 1, 9).getValues();
 
     meals.forEach(meal => {
-      const email = normalizeEmail_(meal[0]);
-      const imageUrl = meal[1] || '';
-      const submissionTime = meal[2] || '';
+      const submissionTime = meal[0] || '';
+      const email = normalizeEmail_(meal[1]);
+      const imageUrl = meal[2] || '';
       const mealName = meal[3] || '';
       const coreIngredients = meal[4] || '';
       const addedIngredients = meal[5] || '';
@@ -1172,11 +1172,11 @@ function sendPendingResponses(ss) {
       const status = String(qData[i][4] || '').trim();
 
       if (response && status === 'Ready to Send') {
-        const email = String(qData[i][0] || '').trim();
+        const submissionTime = qData[i][0];
+        const email = String(qData[i][1] || '').trim();
         const question = String(qData[i][2] || '').trim();
-        const dateTime = qData[i][1];
 
-        const sent = sendQuestionResponse_(email, question, dateTime, response);
+        const sent = sendQuestionResponse_(email, question, submissionTime, response);
 
         if (sent) {
           questions.getRange(i + 2, 5).setValue('Sent');
