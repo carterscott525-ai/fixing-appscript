@@ -659,6 +659,164 @@ function testWorkoutDetection() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// TEST FUNCTION: COMPLETE WORKOUT PIPELINE
+// ═══════════════════════════════════════════════════════════════════════
+
+function testWorkoutPipeline() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetName = 'Workout Log 2'; // Test the specific sheet user mentioned
+  const sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    Logger.log(`ERROR: "${sheetName}" sheet not found!`);
+    Logger.log('Available sheets:');
+    ss.getSheets().forEach(s => Logger.log(`  - ${s.getName()}`));
+    return;
+  }
+
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log(`TESTING COMPLETE WORKOUT PIPELINE FOR: "${sheetName}"`);
+  Logger.log('═══════════════════════════════════════════════════════════\n');
+
+  // STEP 1: Test Detection
+  Logger.log('[STEP 1] TESTING DETECTION LOGIC');
+  Logger.log('─────────────────────────────────');
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headersLower = headers.map(h => String(h).toLowerCase().trim());
+
+  Logger.log(`Headers: ${JSON.stringify(headers)}\n`);
+
+  const hasEmail = headersLower.some(h => EMAIL_LABELS.some(label => h === label || h.includes(label)));
+  const hasTimestamp = headersLower.some(h => TIMESTAMP_LABELS.some(label => h.includes(label)));
+  const hasBodyweight = headersLower.some(h =>
+    h === 'bodyweight' || h === 'body weight' || h === 'current bodyweight' || h.includes('bodyweight')
+  );
+  const hasSets = headersLower.some(h => h === 'sets' || h.includes('(sets)') || h.includes('sets'));
+  const isWorkoutSource = (hasBodyweight || hasSets) && hasEmail && hasTimestamp;
+
+  Logger.log(`✓ Has Email: ${hasEmail}`);
+  Logger.log(`✓ Has Timestamp: ${hasTimestamp}`);
+  Logger.log(`✓ Has Bodyweight: ${hasBodyweight}`);
+  Logger.log(`✓ Has Sets: ${hasSets}`);
+  Logger.log(`✓ Would be detected: ${isWorkoutSource}\n`);
+
+  if (!isWorkoutSource) {
+    Logger.log('❌ FAILED: Sheet would NOT be detected as workout source!');
+    return;
+  }
+
+  // STEP 2: Test Parsing
+  Logger.log('[STEP 2] TESTING parseWorkoutsDynamic_()');
+  Logger.log('─────────────────────────────────');
+
+  const workouts = parseWorkoutsDynamic_(sheet);
+  Logger.log(`Parsed ${workouts.length} workout entries`);
+
+  if (workouts.length === 0) {
+    Logger.log('❌ FAILED: parseWorkoutsDynamic_() returned 0 workouts!');
+    Logger.log('This means the parsing logic failed to extract exercises.');
+    return;
+  }
+
+  Logger.log(`\nFirst 3 workouts:`);
+  for (let i = 0; i < Math.min(3, workouts.length); i++) {
+    Logger.log(`  ${i + 1}. ${JSON.stringify(workouts[i])}`);
+  }
+
+  // STEP 3: Check Workout Pool
+  Logger.log('\n[STEP 3] CHECKING WORKOUT POOL');
+  Logger.log('─────────────────────────────────');
+
+  const workoutPool = ss.getSheetByName('Workout Pool');
+  if (!workoutPool) {
+    Logger.log('❌ FAILED: Workout Pool sheet does not exist!');
+    return;
+  }
+
+  const poolRows = workoutPool.getLastRow();
+  Logger.log(`Workout Pool has ${poolRows - 1} rows of data (excluding header)`);
+
+  if (poolRows > 1) {
+    const poolData = workoutPool.getRange(2, 1, Math.min(3, poolRows - 1), 9).getValues();
+    Logger.log(`\nFirst 3 rows in Workout Pool:`);
+    poolData.forEach((row, i) => {
+      Logger.log(`  ${i + 1}. Time: ${row[0]}, Email: ${row[1]}, Exercise: ${row[2]}, Reps: ${row[4]}, Weight: ${row[5]}, BW: ${row[6]}`);
+    });
+  }
+
+  // STEP 4: Test Gym Score Calculation
+  Logger.log('\n[STEP 4] TESTING GYM SCORE CALCULATION');
+  Logger.log('─────────────────────────────────');
+
+  const sampleWorkouts = workouts.slice(0, 4); // Take first 4 exercises
+  const defaultBodyweight = sampleWorkouts[0]?.bodyweight || 0;
+  const gymScore = calculateGymScore_(sampleWorkouts, defaultBodyweight);
+
+  Logger.log(`Sample: ${sampleWorkouts.length} exercises`);
+  Logger.log(`Default Bodyweight: ${defaultBodyweight}`);
+  Logger.log(`Calculated Gym Score: ${gymScore}`);
+
+  if (gymScore === 0) {
+    Logger.log('⚠️ WARNING: Gym Score is 0! This might indicate a calculation issue.');
+  }
+
+  // STEP 5: Check Timeline Master
+  Logger.log('\n[STEP 5] CHECKING TIMELINE MASTER');
+  Logger.log('─────────────────────────────────');
+
+  const timeline = ss.getSheetByName('Timeline Master');
+  if (!timeline) {
+    Logger.log('❌ FAILED: Timeline Master sheet does not exist!');
+    return;
+  }
+
+  const timelineRows = timeline.getLastRow();
+  Logger.log(`Timeline Master has ${timelineRows - 1} rows of data`);
+
+  if (timelineRows > 1) {
+    // Search for workout entries
+    const timelineData = timeline.getRange(2, 1, timelineRows - 1, 6).getValues();
+    const workoutEntries = timelineData.filter(row => row[1] === 'Workout');
+
+    Logger.log(`Found ${workoutEntries.length} workout entries in Timeline Master`);
+
+    if (workoutEntries.length > 0) {
+      Logger.log(`\nLatest 3 workout entries:`);
+      workoutEntries.slice(0, 3).forEach((row, i) => {
+        Logger.log(`  ${i + 1}. Time: ${row[0]}, Email: ${row[2]}, Details: ${row[5]}`);
+      });
+    } else {
+      Logger.log('❌ NO WORKOUT ENTRIES FOUND IN TIMELINE MASTER!');
+      Logger.log('   This means workouts are not being transferred from Workout Pool to Timeline.');
+    }
+  }
+
+  // STEP 6: Recommendations
+  Logger.log('\n[STEP 6] RECOMMENDATIONS');
+  Logger.log('─────────────────────────────────');
+
+  if (isWorkoutSource && workouts.length > 0 && timelineRows > 1) {
+    const timelineData = timeline.getRange(2, 1, timelineRows - 1, 2).getValues();
+    const workoutCount = timelineData.filter(row => row[1] === 'Workout').length;
+
+    if (workoutCount === 0) {
+      Logger.log('❌ ISSUE IDENTIFIED: Workouts parse correctly but are NOT in Timeline Master');
+      Logger.log('   → Run: runCoachMasterSync()');
+      Logger.log('   → This will trigger buildTimelineMaster() to transfer from Workout Pool');
+    } else {
+      Logger.log('✅ Pipeline appears to be working!');
+      Logger.log(`   → ${workouts.length} exercises parsed`);
+      Logger.log(`   → ${workoutCount} workout entries in Timeline Master`);
+    }
+  }
+
+  Logger.log('\n═══════════════════════════════════════════════════════════');
+  Logger.log('PIPELINE TEST COMPLETE');
+  Logger.log('═══════════════════════════════════════════════════════════');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // MEAL INGEST: BUILD INDEX BY SUBMISSION ID
 // ═══════════════════════════════════════════════════════════════════════
 
