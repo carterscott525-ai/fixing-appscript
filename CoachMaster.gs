@@ -206,6 +206,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
+    .addSeparator()
+    .addItem('Clear All Logged Data (Create Template)', 'clearAllLoggedData')
     .addToUi();
 }
 
@@ -1303,6 +1305,193 @@ function sendAllReadyResponses() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const emailsSent = sendPendingResponses(ss);
   SpreadsheetApp.getUi().alert(`✓ Sent ${emailsSent} responses!`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CLEAR ALL LOGGED DATA (CREATE TEMPLATE)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Clears all logged data from tracking sheets while preserving:
+ * - Sheet structure and headers
+ * - Reference data (Client Details, Exercise Dictionary)
+ * - Formatting and validation rules
+ *
+ * This creates a clean template ready for new data entry.
+ */
+function clearAllLoggedData() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // ═══ SAFETY CONFIRMATION 1: Initial Warning ═══
+  const warningResponse = ui.alert(
+    '⚠️ WARNING: Clear All Logged Data',
+    'This will permanently delete all logged data from:\n\n' +
+    '• Timeline Master\n' +
+    '• Timeline Archive\n' +
+    '• Meal Pool\n' +
+    '• Meal Image+Info\n' +
+    '• Workout Pool\n' +
+    '• General Questions and Feedback\n\n' +
+    'Reference data (Client Details, Exercise Dictionary) will be preserved.\n\n' +
+    'This action CANNOT be undone!\n\n' +
+    'Do you want to continue?',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (warningResponse !== ui.Button.YES) {
+    ui.alert('✓ Operation cancelled. No data was deleted.');
+    return;
+  }
+
+  // ═══ SAFETY CONFIRMATION 2: Final Confirmation ═══
+  const finalResponse = ui.alert(
+    '🔴 FINAL CONFIRMATION',
+    'Are you ABSOLUTELY SURE you want to delete all logged data?\n\n' +
+    'This is your last chance to cancel.\n\n' +
+    'Type YES to proceed:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (finalResponse !== ui.Button.OK) {
+    ui.alert('✓ Operation cancelled. No data was deleted.');
+    return;
+  }
+
+  // ═══ EXECUTE DATA CLEARING ═══
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('CLEAR ALL LOGGED DATA - STARTED');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  const clearResults = {
+    clearedSheets: [],
+    preservedSheets: [],
+    errors: []
+  };
+
+  // Sheets to clear (keeping headers only)
+  const sheetsToClear = [
+    { name: 'Timeline Master', headers: TIMELINE_HEADERS },
+    { name: 'Timeline Archive', headers: TIMELINE_HEADERS },
+    { name: 'Meal Pool', headers: MEAL_POOL_HEADERS },
+    { name: 'Meal Image+Info', headers: MEAL_IMAGE_INFO_HEADERS },
+    { name: 'Workout Pool', headers: WORKOUT_POOL_HEADERS },
+    { name: 'General Questions and Feedback', headers: QUESTIONS_HEADERS }
+  ];
+
+  // Sheets to preserve (reference data)
+  const sheetsToPreserve = [
+    'Client Details',
+    'Exercise Dictionary'
+  ];
+
+  // Clear data sheets
+  sheetsToClear.forEach(sheetConfig => {
+    try {
+      const sheet = ss.getSheetByName(sheetConfig.name);
+
+      if (!sheet) {
+        Logger.log(`  ⚠️ Sheet "${sheetConfig.name}" not found, skipping`);
+        clearResults.errors.push(`Sheet "${sheetConfig.name}" not found`);
+        return;
+      }
+
+      const lastRow = sheet.getLastRow();
+
+      if (lastRow <= 1) {
+        Logger.log(`  ✓ ${sheetConfig.name}: Already empty`);
+        clearResults.clearedSheets.push(`${sheetConfig.name} (already empty)`);
+        return;
+      }
+
+      // Count rows before clearing
+      const rowsToDelete = lastRow - 1;
+
+      // Delete all data rows (keep header row)
+      if (rowsToDelete > 0) {
+        sheet.deleteRows(2, rowsToDelete);
+        Logger.log(`  ✓ ${sheetConfig.name}: Cleared ${rowsToDelete} rows`);
+        clearResults.clearedSheets.push(`${sheetConfig.name} (${rowsToDelete} rows)`);
+      }
+
+      // Reapply formatting and validation
+      reapplySheetFormatting_(sheet, sheetConfig.name);
+
+    } catch (e) {
+      Logger.log(`  ✗ Error clearing ${sheetConfig.name}: ${e.message}`);
+      clearResults.errors.push(`${sheetConfig.name}: ${e.message}`);
+    }
+  });
+
+  // Log preserved sheets
+  sheetsToPreserve.forEach(sheetName => {
+    const sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+      const rowCount = sheet.getLastRow() > 1 ? sheet.getLastRow() - 1 : 0;
+      clearResults.preservedSheets.push(`${sheetName} (${rowCount} rows preserved)`);
+      Logger.log(`  ✓ ${sheetName}: Preserved (${rowCount} data rows)`);
+    }
+  });
+
+  Logger.log('');
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('CLEAR ALL LOGGED DATA - COMPLETE');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  // ═══ SHOW RESULTS ═══
+  let resultMessage = '✓ Data clearing completed!\n\n';
+
+  if (clearResults.clearedSheets.length > 0) {
+    resultMessage += 'CLEARED SHEETS:\n';
+    clearResults.clearedSheets.forEach(item => {
+      resultMessage += `  • ${item}\n`;
+    });
+    resultMessage += '\n';
+  }
+
+  if (clearResults.preservedSheets.length > 0) {
+    resultMessage += 'PRESERVED SHEETS:\n';
+    clearResults.preservedSheets.forEach(item => {
+      resultMessage += `  • ${item}\n`;
+    });
+    resultMessage += '\n';
+  }
+
+  if (clearResults.errors.length > 0) {
+    resultMessage += '⚠️ ERRORS:\n';
+    clearResults.errors.forEach(error => {
+      resultMessage += `  • ${error}\n`;
+    });
+  }
+
+  resultMessage += '\nYour spreadsheet is now a clean template ready for new data!';
+
+  ui.alert('Data Clearing Complete', resultMessage, ui.ButtonSet.OK);
+}
+
+/**
+ * Reapplies formatting and validation rules after clearing data
+ */
+function reapplySheetFormatting_(sheet, sheetName) {
+  try {
+    // Reapply date/time formatting
+    if (sheetName === 'Timeline Master' || sheetName === 'Timeline Archive') {
+      formatDateTimeColumn_(sheet, 1);  // DateTime column
+      formatDateTimeColumn_(sheet, 17); // Last Updated column
+      addStatusValidation_(sheet, 22);  // Response Status column
+    } else if (sheetName === 'Meal Pool' || sheetName === 'Meal Image+Info') {
+      formatDateTimeColumn_(sheet, 3);  // Submission Time column
+    } else if (sheetName === 'Workout Pool') {
+      formatDateTimeColumn_(sheet, 2);  // Submission Time column
+    } else if (sheetName === 'General Questions and Feedback') {
+      formatDateTimeColumn_(sheet, 2);  // Submission Time column
+      addStatusValidation_(sheet, 5);   // Status column
+    }
+
+    Logger.log(`    → Formatting reapplied to ${sheetName}`);
+  } catch (e) {
+    Logger.log(`    ⚠️ Warning: Could not reapply formatting to ${sheetName}: ${e.message}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
