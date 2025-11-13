@@ -1679,7 +1679,24 @@ function parseAllWorkoutLogs() {
 
       } else {
         // SIMPLE FORMAT
+        // Skip non-exercise columns (metadata, IDs, notes, timestamps)
         const skipCols = new Set([dateCol, emailCol, bwCol]);
+
+        // Add additional metadata columns to skip
+        headers.forEach((header, idx) => {
+          const headerLower = String(header).toLowerCase();
+          if (headerLower.includes('submission id') ||
+              headerLower.includes('submissionid') ||
+              headerLower.includes('notes') ||
+              headerLower.includes('symptoms') ||
+              headerLower.includes('end time') ||
+              headerLower.includes('start time') ||
+              headerLower.includes('duration') ||
+              headerLower.includes('timestamp') ||
+              headerLower.includes('id')) {
+            skipCols.add(idx);
+          }
+        });
 
         headers.forEach((header, colIdx) => {
           if (skipCols.has(colIdx)) return;
