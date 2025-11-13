@@ -1344,7 +1344,9 @@ function clearAllLoggedData() {
     '• Meal Pool\n' +
     '• Meal Image+Info\n' +
     '• Workout Pool\n' +
-    '• General Questions and Feedback\n\n' +
+    '• General Questions and Feedback\n' +
+    '• ParsedWorkouts\n' +
+    '• GymScore\n\n' +
     'Reference data (Client Details, Exercise Dictionary) will be preserved.\n\n' +
     'This action CANNOT be undone!\n\n' +
     'Do you want to continue?',
@@ -1388,7 +1390,9 @@ function clearAllLoggedData() {
     { name: 'Meal Pool', headers: MEAL_POOL_HEADERS },
     { name: 'Meal Image+Info', headers: MEAL_IMAGE_INFO_HEADERS },
     { name: 'Workout Pool', headers: WORKOUT_POOL_HEADERS },
-    { name: 'General Questions and Feedback', headers: QUESTIONS_HEADERS }
+    { name: 'General Questions and Feedback', headers: QUESTIONS_HEADERS },
+    { name: 'ParsedWorkouts', headers: PARSED_WORKOUTS_HEADERS },
+    { name: 'GymScore', headers: GYM_SCORE_HEADERS }
   ];
 
   // Sheets to preserve (reference data)
