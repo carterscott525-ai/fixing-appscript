@@ -1551,13 +1551,12 @@ function archiveOldEntries(ss) {
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Parses all "Workout Log" tabs with grouped column format:
- * - Exercise (Sets)
- * - Exercise (Reps,Reps,Reps,Reps)
- * - Exercise (Weight,Weight,Weight,Weight)
+ * Parses all "Workout Log" tabs (both simple and grouped formats):
+ * - Simple: Pull-Ups=20 (uses bodyweight)
+ * - Grouped: Exercise (Sets), Exercise (Reps,Reps...), Exercise (Weight,Weight...)
  *
  * Outputs to:
- * - Timeline Master (always, even if no reps/weight)
+ * - Timeline Master (always)
  * - ParsedWorkouts (one row per set with 1RM calculations)
  * - GymScore (normalized score using Epley formula)
  */
@@ -1567,8 +1566,6 @@ function parseAllWorkoutLogs() {
   Logger.log('═══════════════════════════════════════════════════════════');
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Create or get output sheets
   const parsedSheet = getOrCreateSheet_(ss, 'ParsedWorkouts', PARSED_WORKOUTS_HEADERS, '#FF5722');
   const scoreSheet = getOrCreateSheet_(ss, 'GymScore', GYM_SCORE_HEADERS, '#9C27B0');
   const timeline = ss.getSheetByName('Timeline Master');
@@ -1576,7 +1573,6 @@ function parseAllWorkoutLogs() {
   let totalRowsParsed = 0;
   let totalSetsProcessed = 0;
 
-  // Find all workout log sheets
   const allSheets = ss.getSheets();
   const workoutLogSheets = allSheets.filter(sheet =>
     sheet.getName().toLowerCase().includes('workout log')
@@ -1590,7 +1586,6 @@ function parseAllWorkoutLogs() {
 
   Logger.log(`Found ${workoutLogSheets.length} workout log sheet(s)`);
 
-  // Process each workout log sheet
   workoutLogSheets.forEach(sheet => {
     Logger.log(`\nProcessing: ${sheet.getName()}`);
 
@@ -1602,109 +1597,112 @@ function parseAllWorkoutLogs() {
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const dataRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
 
-    // Find date, email, and bodyweight columns
     const dateCol = findColumn_(headers, ['submission date', 'date', 'timestamp']);
     const emailCol = findColumn_(headers, EMAIL_LABELS);
     const bwCol = findColumn_(headers, ['current bodyweight', 'bodyweight', 'body weight', 'bw']);
 
     if (dateCol === -1 || emailCol === -1 || bwCol === -1) {
-      Logger.log('  ⚠️ Missing required columns (Date, Email, or Bodyweight)');
+      Logger.log('  ⚠️ Missing required columns');
       return;
     }
 
-    // Detect exercise groups
     const exerciseGroups = detectExerciseGroups_(headers);
-    Logger.log(`  Found ${exerciseGroups.length} exercise(s)`);
+    const isGroupedFormat = exerciseGroups.length > 0;
 
-    // Process each data row
+    Logger.log(`  Layout: ${isGroupedFormat ? 'Grouped' : 'Simple'} (${exerciseGroups.length} groups)`);
+
     dataRows.forEach((row, rowIdx) => {
       const date = parseTimestamp(row[dateCol], ss.getSpreadsheetTimeZone());
       const email = normalizeEmail_(row[emailCol]);
       const bodyweight = parseFloat(row[bwCol]) || 0;
 
       if (!date || !email || !bodyweight) {
-        Logger.log(`  ⚠️ Row ${rowIdx + 2}: Missing date, email, or bodyweight`);
+        Logger.log(`  ⚠️ Row ${rowIdx + 2}: Missing required data`);
         return;
       }
 
       const allSets = [];
       const exerciseDetails = [];
 
-      // Process each exercise group
-      exerciseGroups.forEach(group => {
-        const setsValue = row[group.setsCol] || '';
-        const repsValue = String(row[group.repsCol] || '');
-        const weightValue = String(row[group.weightCol] || '');
+      if (isGroupedFormat) {
+        // GROUPED FORMAT
+        exerciseGroups.forEach(group => {
+          const setsValue = row[group.setsCol] || '';
+          const repsRaw = String(row[group.repsCol] || '');
+          const weightRaw = String(row[group.weightCol] || '');
 
-        // Parse comma-separated values
-        const repsList = repsValue.split(',').map(r => parseFloat(r.trim())).filter(r => !isNaN(r));
-        const weightList = weightValue.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w));
+          const repsList = parseNumericList_(repsRaw);
+          const weightList = parseNumericList_(weightRaw, bodyweight);
 
-        // Determine number of sets
-        let numSets = parseInt(setsValue) || 0;
-        if (numSets === 0 && (repsList.length > 0 || weightList.length > 0)) {
-          numSets = Math.max(repsList.length, weightList.length);
-        }
-        if (numSets === 0) numSets = 1; // Default to 1 set
+          let numSets = parseInt(setsValue) || Math.max(repsList.length, weightList.length) || 1;
 
-        // Build sets for this exercise
-        for (let setNum = 1; setNum <= numSets; setNum++) {
-          const reps = repsList[setNum - 1] || 0;
-          const weight = weightList[setNum - 1] || bodyweight; // Use bodyweight if no weight
+          for (let setNum = 1; setNum <= numSets; setNum++) {
+            const reps = repsList[setNum - 1] || 0;
+            const weight = weightList[setNum - 1] || bodyweight;
 
-          // Calculate 1RM using Epley formula: 1RM = weight × (1 + reps / 30)
-          const oneRM = reps > 0 ? weight * (1 + reps / 30) : 0;
-          const normalized = bodyweight > 0 && oneRM > 0 ? oneRM / bodyweight : 0;
+            const oneRM = reps > 0 ? weight * (1 + reps / 30) : 0;
+            const normalized = bodyweight > 0 && oneRM > 0 ? oneRM / bodyweight : 0;
 
-          allSets.push({
-            exercise: group.name,
-            setNum: setNum,
-            reps: reps,
-            weight: weight,
-            oneRM: oneRM,
-            normalized: normalized
-          });
+            allSets.push({ exercise: group.name, setNum, reps, weight, oneRM, normalized });
 
-          // Add to ParsedWorkouts
+            parsedSheet.appendRow([
+              date, email, group.name, setNum,
+              reps || '', weight || '',
+              oneRM ? oneRM.toFixed(2) : '',
+              normalized ? normalized.toFixed(3) : ''
+            ]);
+
+            totalSetsProcessed++;
+          }
+
+          const setsSummary = repsList.length > 0 ? `${numSets}x${repsList.join('/')}` : `${numSets} sets`;
+          exerciseDetails.push(`${group.name}: ${setsSummary}`);
+        });
+
+      } else {
+        // SIMPLE FORMAT
+        const skipCols = new Set([dateCol, emailCol, bwCol]);
+
+        headers.forEach((header, colIdx) => {
+          if (skipCols.has(colIdx)) return;
+
+          const cellValue = row[colIdx];
+          const exerciseName = String(header).trim();
+
+          if (!exerciseName || exerciseName === '') return;
+
+          const reps = parseFloat(cellValue);
+          if (isNaN(reps) || reps <= 0) return;
+
+          const oneRM = bodyweight * (1 + reps / 30);
+          const normalized = oneRM / bodyweight;
+
+          allSets.push({ exercise: exerciseName, setNum: 1, reps, weight: bodyweight, oneRM, normalized });
+
           parsedSheet.appendRow([
-            date,
-            email,
-            group.name,
-            setNum,
-            reps || '',
-            weight || '',
-            oneRM ? oneRM.toFixed(2) : '',
-            normalized ? normalized.toFixed(3) : ''
+            date, email, exerciseName, 1,
+            reps, bodyweight,
+            oneRM.toFixed(2),
+            normalized.toFixed(3)
           ]);
 
           totalSetsProcessed++;
-        }
-
-        // Build exercise summary for Timeline
-        const setsSummary = repsList.length > 0 ?
-          `${numSets}x${repsList.join('/')}` :
-          `${numSets} sets`;
-        exerciseDetails.push(`${group.name}: ${setsSummary}`);
-      });
+          exerciseDetails.push(`${exerciseName}: ${reps}`);
+        });
+      }
 
       // Calculate Gym Score
       const validSets = allSets.filter(s => s.normalized > 0);
       const gymScore = validSets.length > 0 ?
-        validSets.reduce((sum, s) => sum + s.normalized, 0) / validSets.length :
-        0;
+        validSets.reduce((sum, s) => sum + s.normalized, 0) / validSets.length : 0;
 
-      // Add to GymScore sheet
       scoreSheet.appendRow([
-        date,
-        email,
-        bodyweight,
-        validSets.length,
-        gymScore ? gymScore.toFixed(2) : '0',
-        'Σ(1RM/BW)/N'
+        date, email, bodyweight, validSets.length,
+        gymScore.toFixed(2), 'Σ(1RM/BW)/N'
       ]);
 
-      // Add to Timeline Master
-      if (timeline) {
+      // Add to Timeline
+      if (timeline && exerciseDetails.length > 0) {
         const clientDetails = ss.getSheetByName('Client Details');
         const clientName = getClientNames_(clientDetails).get(email) || '';
         const dateObj = parseDate_(date);
@@ -1715,31 +1713,9 @@ function parseAllWorkoutLogs() {
         const workoutNotes = `BW: ${bodyweight} lb | Gym Score: ${gymScore.toFixed(2)} | ${validSets.length} total sets`;
 
         timeline.appendRow([
-          date,                     // DateTime
-          'Workout',                // Type
-          email,                    // Client Email
-          clientName,               // Client Name
-          '',                       // Image URL
-          workoutSummary,           // Details
-          '',                       // Ingredients
-          '',                       // Portions
-          '',                       // Cooking Method
-          '',                       // Meal Timing Category
-          '',                       // Fuel Score
-          '',                       // Recovery Score
-          '',                       // Other Score
-          '',                       // Meal Notes
-          '',                       // Timing Minutes
-          '',                       // Meal Status
-          '',                       // Last Updated
-          workoutSummary,           // Exercises
-          '',                       // Sets/Reps
-          workoutNotes,             // Workout Notes
-          '',                       // Coach Response
-          'Pending Review',         // Response Status
-          week,                     // Week
-          month,                    // Month
-          ''                        // Submission ID
+          date, 'Workout', email, clientName, '', workoutSummary,
+          '', '', '', '', '', '', '', '', '', '', '',
+          workoutSummary, '', workoutNotes, '', 'Pending Review', week, month, ''
         ]);
       }
 
@@ -1749,7 +1725,6 @@ function parseAllWorkoutLogs() {
     Logger.log(`  ✓ Processed ${dataRows.length} row(s)`);
   });
 
-  // Format sheets
   formatDateTimeColumn_(parsedSheet, 1);
   formatDateTimeColumn_(scoreSheet, 1);
 
@@ -1770,6 +1745,52 @@ function parseAllWorkoutLogs() {
     `• GymScore`,
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+/**
+ * Parses numeric lists from strings with improved handling:
+ * - Splits on commas, dots, spaces, slashes, pipes
+ * - Handles "BW" as bodyweight marker
+ * - Detects concatenated numbers (e.g., "405405405405")
+ * - Ignores "AMRAP", "RIR", "(failed)"
+ */
+function parseNumericList_(rawStr, bodyweight) {
+  bodyweight = bodyweight || 0;
+
+  if (!rawStr || rawStr.trim() === '') return [];
+
+  const str = String(rawStr).trim().toUpperCase();
+
+  // Handle "BW" marker
+  if (str === 'BW' && bodyweight > 0) return [bodyweight];
+
+  // Ignore text markers
+  if (str.includes('AMRAP') || str.includes('RIR') || str.includes('FAILED')) return [];
+
+  // Try splitting on common delimiters
+  let tokens = str.split(/[,\s/|.]+/);
+
+  // Clean and parse each token
+  let numbers = tokens
+    .map(t => t.replace(/[^\d.]/g, ''))
+    .filter(t => t !== '')
+    .map(t => parseFloat(t))
+    .filter(n => !isNaN(n) && n > 0);
+
+  // If we got valid numbers, return them
+  if (numbers.length > 0) return numbers;
+
+  // Handle concatenated numbers (e.g., "405405405405")
+  const cleanStr = rawStr.replace(/[^\d]/g, '');
+  if (cleanStr.length >= 9 && cleanStr.length % 3 === 0) {
+    const chunks = cleanStr.match(/\d{3}/g);
+    if (chunks && chunks.length > 1) {
+      numbers = chunks.map(c => parseFloat(c)).filter(n => !isNaN(n));
+      if (numbers.length > 0) return numbers;
+    }
+  }
+
+  return [];
 }
 
 /**
