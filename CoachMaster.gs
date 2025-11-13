@@ -1638,7 +1638,7 @@ function parseAllWorkoutLogs() {
         .replace(/\(failed\)/gi, '')
         .split(/[,.]+/)
         .map(t => t.trim())
-        .filter(t => t && !['BW', 'AMRAP'].includes(t.toUpperCase()))
+        .filter(t => t && !['BW', 'AMRAP', 'RIR'].includes(t.toUpperCase()))
         .map(Number)
         .filter(n => !isNaN(n));
 
@@ -1990,7 +1990,7 @@ function debugParseStructure() {
         .replace(/\(failed\)/gi, '')
         .split(/[,.]+/)
         .map(t => t.trim())
-        .filter(t => t && !['BW', 'AMRAP'].includes(t.toUpperCase()))
+        .filter(t => t && !['BW', 'AMRAP', 'RIR'].includes(t.toUpperCase()))
         .map(Number)
         .filter(n => !isNaN(n));
 
@@ -2051,7 +2051,8 @@ function debugParseStructure() {
       'BW',           // Bodyweight marker
       '20',           // Single value
       '',             // Empty
-      'AMRAP'         // Text marker
+      'AMRAP',        // Text marker
+      'RIR'           // Reps in Reserve marker
     ];
 
     // Use same split function as parser
@@ -2059,13 +2060,13 @@ function debugParseStructure() {
       .replace(/\(failed\)/gi, '')
       .split(/[,.]+/)
       .map(t => t.trim())
-      .filter(t => t && !['BW', 'AMRAP'].includes(t.toUpperCase()))
+      .filter(t => t && !['BW', 'AMRAP', 'RIR'].includes(t.toUpperCase()))
       .map(Number)
       .filter(n => !isNaN(n));
 
     testCases.forEach(testCase => {
       const parsed = testSplit(testCase);
-      const expected = ['', 'BW', 'AMRAP'].includes(testCase) ? '❌ (Expected)' : parsed.length === 0 ? '❌ FAILED' : '✓';
+      const expected = ['', 'BW', 'AMRAP', 'RIR'].includes(testCase) ? '❌ (Expected)' : parsed.length === 0 ? '❌ FAILED' : '✓';
       debugLog.push(`  "${testCase}" → [${parsed.join(', ')}] ${expected}`);
     });
 
