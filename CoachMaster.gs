@@ -1414,6 +1414,12 @@ function clearAllLoggedData() {
 
       const lastRow = sheet.getLastRow();
 
+      // Update headers to match current constants
+      if (sheetConfig.headers) {
+        sheet.getRange(1, 1, 1, sheetConfig.headers.length).setValues([sheetConfig.headers]);
+        Logger.log(`  ✓ ${sheetConfig.name}: Updated headers`);
+      }
+
       if (lastRow <= 1) {
         Logger.log(`  ✓ ${sheetConfig.name}: Already empty`);
         clearResults.clearedSheets.push(`${sheetConfig.name} (already empty)`);
