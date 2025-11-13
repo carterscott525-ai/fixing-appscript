@@ -1966,3 +1966,277 @@ function getWeekNumber_(date) {
   const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
   return `Week ${weekNo}`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// DIAGNOSTIC FUNCTION - DEBUG WORKOUT PARSING STRUCTURE
+// ═══════════════════════════════════════════════════════════════════════
+
+function debugParseStructure() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const allSheets = ss.getSheets();
+
+  let log = [];
+  log.push('═══════════════════════════════════════════════════════════');
+  log.push('WORKOUT LOG PARSING DIAGNOSTICS');
+  log.push('═══════════════════════════════════════════════════════════\n');
+
+  // Find all workout log sheets
+  const workoutSheets = allSheets.filter(sheet =>
+    sheet.getName().toLowerCase().includes('workout log')
+  );
+
+  log.push(`Found ${workoutSheets.length} workout log sheet(s):\n`);
+
+  workoutSheets.forEach(sheet => {
+    const sheetName = sheet.getName();
+    log.push(`\n${'='.repeat(60)}`);
+    log.push(`SHEET: "${sheetName}"`);
+    log.push('='.repeat(60));
+
+    // Get headers
+    const lastCol = sheet.getLastColumn();
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow < 2) {
+      log.push('  ⚠️ No data rows found\n');
+      return;
+    }
+
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+    log.push(`\n[1] HEADERS (${headers.length} columns):`);
+    log.push('-'.repeat(60));
+
+    headers.forEach((header, idx) => {
+      log.push(`  Col ${idx}: "${header}"`);
+    });
+
+    // Detect exercise groups
+    log.push(`\n[2] EXERCISE GROUP DETECTION:`);
+    log.push('-'.repeat(60));
+
+    const exerciseGroups = new Map();
+    const setsPattern = /^(.+?)\s*\(sets\)\s*$/i;
+    const repsPattern = /^(.+?)\s*\((reps[,\s]*)+\)\s*$/i;
+    const weightPattern = /^(.+?)\s*\((weight[,\s]*)+\)\s*$/i;
+
+    headers.forEach((header, idx) => {
+      const headerStr = String(header).trim();
+
+      // Check for (Sets)
+      let match = headerStr.match(setsPattern);
+      if (match) {
+        const exerciseName = match[1].trim();
+        if (!exerciseGroups.has(exerciseName)) {
+          exerciseGroups.set(exerciseName, { sets: -1, reps: -1, weight: -1 });
+        }
+        exerciseGroups.get(exerciseName).sets = idx;
+        log.push(`  ✓ Found (Sets) for "${exerciseName}" at col ${idx}`);
+        return;
+      }
+
+      // Check for (Reps,Reps,...) or (Reps...)
+      if (headerStr.toLowerCase().includes('(reps') ||
+          headerStr.match(/\(reps[,\s)]/i)) {
+        const exerciseName = headerStr.split('(')[0].trim();
+        if (!exerciseGroups.has(exerciseName)) {
+          exerciseGroups.set(exerciseName, { sets: -1, reps: -1, weight: -1 });
+        }
+        exerciseGroups.get(exerciseName).reps = idx;
+        log.push(`  ✓ Found (Reps...) for "${exerciseName}" at col ${idx}`);
+        return;
+      }
+
+      // Check for (Weight,Weight,...) or (Weight...)
+      if (headerStr.toLowerCase().includes('(weight') ||
+          headerStr.match(/\(weight[,\s)]/i)) {
+        const exerciseName = headerStr.split('(')[0].trim();
+        if (!exerciseGroups.has(exerciseName)) {
+          exerciseGroups.set(exerciseName, { sets: -1, reps: -1, weight: -1 });
+        }
+        exerciseGroups.get(exerciseName).weight = idx;
+        log.push(`  ✓ Found (Weight...) for "${exerciseName}" at col ${idx}`);
+        return;
+      }
+    });
+
+    log.push(`\n  Total exercise groups detected: ${exerciseGroups.size}`);
+
+    if (exerciseGroups.size > 0) {
+      log.push('\n  Exercise group summary:');
+      exerciseGroups.forEach((cols, exerciseName) => {
+        log.push(`    "${exerciseName}":`);
+        log.push(`      Sets col: ${cols.sets === -1 ? 'NOT FOUND' : cols.sets}`);
+        log.push(`      Reps col: ${cols.reps === -1 ? 'NOT FOUND' : cols.reps}`);
+        log.push(`      Weight col: ${cols.weight === -1 ? 'NOT FOUND' : cols.weight}`);
+      });
+    }
+
+    // Get sample row (row 2)
+    log.push(`\n[3] SAMPLE ROW (Row 2):`);
+    log.push('-'.repeat(60));
+
+    const sampleRow = sheet.getRange(2, 1, 1, lastCol).getValues()[0];
+
+    // Find Email and Bodyweight columns
+    const emailCol = headers.findIndex(h =>
+      String(h).toLowerCase().includes('email')
+    );
+    const bodyweightCol = headers.findIndex(h =>
+      String(h).toLowerCase().includes('bodyweight') ||
+      String(h).toLowerCase().includes('current bodyweight')
+    );
+
+    if (emailCol !== -1) {
+      log.push(`  Email (col ${emailCol}): "${sampleRow[emailCol]}"`);
+    }
+    if (bodyweightCol !== -1) {
+      log.push(`  Bodyweight (col ${bodyweightCol}): ${sampleRow[bodyweightCol]} (type: ${typeof sampleRow[bodyweightCol]})`);
+    }
+
+    // Show exercise data with raw values
+    log.push('\n  Exercise data:');
+    exerciseGroups.forEach((cols, exerciseName) => {
+      log.push(`\n    "${exerciseName}":`);
+
+      if (cols.sets !== -1) {
+        const setsValue = sampleRow[cols.sets];
+        log.push(`      Sets (col ${cols.sets}): ${setsValue} (type: ${typeof setsValue})`);
+      }
+
+      if (cols.reps !== -1) {
+        const repsValue = sampleRow[cols.reps];
+        log.push(`      Reps (col ${cols.reps}): "${repsValue}" (type: ${typeof repsValue})`);
+      }
+
+      if (cols.weight !== -1) {
+        const weightValue = sampleRow[cols.weight];
+        log.push(`      Weight (col ${cols.weight}): "${weightValue}" (type: ${typeof weightValue})`);
+      }
+    });
+
+    // Test comma parsing
+    log.push(`\n[4] COMMA PARSING TESTS:`);
+    log.push('-'.repeat(60));
+
+    const testCases = [
+      '405,405,405,405',
+      '110.120.140',
+      '8,9,7,6',
+      '20',
+      'BW',
+      '3x5@315'
+    ];
+
+    testCases.forEach(testCase => {
+      log.push(`\n  Input: "${testCase}"`);
+
+      // Test 1: Split by comma
+      const commaSplit = testCase.split(',').map(v => v.trim());
+      log.push(`    Split by comma: [${commaSplit.join(', ')}]`);
+
+      // Test 2: Split by period (for decimal confusion)
+      const periodSplit = testCase.split('.').map(v => v.trim());
+      log.push(`    Split by period: [${periodSplit.join(', ')}]`);
+
+      // Test 3: Parse as numbers
+      const parsedComma = commaSplit.map(v => {
+        const num = parseFloat(v.replace(/[^\d.]/g, ''));
+        return isNaN(num) ? 'NaN' : num;
+      });
+      log.push(`    Parsed (comma): [${parsedComma.join(', ')}]`);
+
+      // Test 4: Check for actual values in sample row
+      exerciseGroups.forEach((cols, exerciseName) => {
+        if (cols.reps !== -1) {
+          const repsValue = String(sampleRow[cols.reps] || '');
+          if (repsValue === testCase) {
+            log.push(`    ✓ MATCH: Found in "${exerciseName}" Reps column`);
+          }
+        }
+        if (cols.weight !== -1) {
+          const weightValue = String(sampleRow[cols.weight] || '');
+          if (weightValue === testCase) {
+            log.push(`    ✓ MATCH: Found in "${exerciseName}" Weight column`);
+          }
+        }
+      });
+    });
+
+    // Test Epley formula
+    log.push(`\n[5] EPLEY 1RM CALCULATION TEST:`);
+    log.push('-'.repeat(60));
+    log.push('  Formula: weight × (1 + reps/30)\n');
+
+    const epleyTests = [
+      { weight: 405, reps: 8, expected: 513 },
+      { weight: 315, reps: 5, expected: 367.5 },
+      { weight: 202, reps: 20, expected: 336.67 }
+    ];
+
+    epleyTests.forEach(test => {
+      const calculated = test.weight * (1 + test.reps / 30);
+      const rounded = Math.round(calculated * 100) / 100;
+      log.push(`  ${test.weight} lbs × ${test.reps} reps:`);
+      log.push(`    Calculated: ${rounded}`);
+      log.push(`    Expected: ~${test.expected}`);
+      log.push(`    Match: ${Math.abs(rounded - test.expected) < 1 ? '✓' : '✗'}\n`);
+    });
+
+    // Real exercise calculation
+    log.push('  Real data from sample row:');
+    exerciseGroups.forEach((cols, exerciseName) => {
+      if (cols.reps !== -1 && cols.weight !== -1) {
+        const repsValue = String(sampleRow[cols.reps] || '').trim();
+        const weightValue = String(sampleRow[cols.weight] || '').trim();
+
+        log.push(`\n    "${exerciseName}":`);
+        log.push(`      Raw reps: "${repsValue}"`);
+        log.push(`      Raw weight: "${weightValue}"`);
+
+        // Parse comma-separated values
+        const repsArray = repsValue.split(',').map(r => {
+          const parsed = parseFloat(r.trim().replace(/[^\d.]/g, ''));
+          return isNaN(parsed) ? 0 : parsed;
+        }).filter(r => r > 0);
+
+        const weightsArray = weightValue.split(',').map(w => {
+          const parsed = parseFloat(w.trim().replace(/[^\d.]/g, ''));
+          return isNaN(parsed) ? 0 : parsed;
+        }).filter(w => w > 0);
+
+        log.push(`      Parsed reps: [${repsArray.join(', ')}]`);
+        log.push(`      Parsed weights: [${weightsArray.join(', ')}]`);
+
+        if (repsArray.length > 0 && weightsArray.length > 0) {
+          const all1RMs = [];
+          repsArray.forEach((rep, idx) => {
+            const weight = weightsArray.length > idx ? weightsArray[idx] : weightsArray[0];
+            const oneRM = weight * (1 + rep / 30);
+            all1RMs.push(Math.round(oneRM * 100) / 100);
+          });
+          log.push(`      Calculated 1RMs: [${all1RMs.join(', ')}]`);
+          log.push(`      Average 1RM: ${Math.round((all1RMs.reduce((a, b) => a + b, 0) / all1RMs.length) * 100) / 100}`);
+        }
+      }
+    });
+  });
+
+  log.push('\n\n═══════════════════════════════════════════════════════════');
+  log.push('END DIAGNOSTICS');
+  log.push('═══════════════════════════════════════════════════════════');
+
+  // Output to console
+  const fullLog = log.join('\n');
+  Logger.log(fullLog);
+
+  // Output to UI (first 3000 chars)
+  const preview = fullLog.substring(0, 3000);
+  SpreadsheetApp.getUi().alert(
+    'Diagnostic Complete (see execution log for full output)\n\n' +
+    preview +
+    (fullLog.length > 3000 ? '\n\n... (truncated, see logs for full output)' : '')
+  );
+
+  return fullLog;
+}
