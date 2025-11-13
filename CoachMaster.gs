@@ -1586,6 +1586,10 @@ function parseAllWorkoutLogs() {
 
   Logger.log(`Found ${workoutLogSheets.length} workout log sheet(s)`);
 
+  // Get Timeline Master header mapping
+  const timelineHeaders = timeline ? timeline.getRange(1, 1, 1, timeline.getLastColumn()).getDisplayValues()[0] : [];
+  const findTimelineCol = (name) => timelineHeaders.findIndex(h => String(h).toLowerCase() === name.toLowerCase());
+
   workoutLogSheets.forEach(sheet => {
     Logger.log(`\nProcessing: ${sheet.getName()}`);
 
@@ -1595,7 +1599,7 @@ function parseAllWorkoutLogs() {
     }
 
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const dataRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+    const dataRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getDisplayValues();
 
     const dateCol = findColumn_(headers, ['submission date', 'date', 'timestamp']);
     const emailCol = findColumn_(headers, EMAIL_LABELS);
@@ -1612,7 +1616,8 @@ function parseAllWorkoutLogs() {
     Logger.log(`  Layout: ${isGroupedFormat ? 'Grouped' : 'Simple'} (${exerciseGroups.length} groups)`);
 
     dataRows.forEach((row, rowIdx) => {
-      const date = parseTimestamp(row[dateCol], ss.getSpreadsheetTimeZone());
+      const dateStr = row[dateCol];
+      const date = parseTimestamp(dateStr, ss.getSpreadsheetTimeZone());
       const email = normalizeEmail_(row[emailCol]);
       const bodyweight = parseFloat(row[bwCol]) || 0;
 
@@ -1624,15 +1629,24 @@ function parseAllWorkoutLogs() {
       const allSets = [];
       const exerciseDetails = [];
 
+      // Split function per requirements
+      const split = s => String(s||'')
+        .replace(/\(failed\)/gi, '')
+        .split(/[,.]+/)
+        .map(t => t.trim())
+        .filter(t => t && !['BW', 'AMRAP'].includes(t.toUpperCase()))
+        .map(Number)
+        .filter(n => !isNaN(n));
+
       if (isGroupedFormat) {
         // GROUPED FORMAT
         exerciseGroups.forEach(group => {
           const setsValue = row[group.setsCol] || '';
-          const repsRaw = String(row[group.repsCol] || '');
-          const weightRaw = String(row[group.weightCol] || '');
+          const repsRaw = row[group.repsCol] || '';
+          const weightRaw = row[group.weightCol] || '';
 
-          const repsList = parseNumericList_(repsRaw);
-          const weightList = parseNumericList_(weightRaw, bodyweight);
+          const repsList = split(repsRaw);
+          const weightList = split(weightRaw);
 
           let numSets = parseInt(setsValue) || Math.max(repsList.length, weightList.length) || 1;
 
@@ -1701,7 +1715,7 @@ function parseAllWorkoutLogs() {
         gymScore.toFixed(2), 'Σ(1RM/BW)/N'
       ]);
 
-      // Add to Timeline
+      // Add to Timeline Master by header lookup
       if (timeline && exerciseDetails.length > 0) {
         const clientDetails = ss.getSheetByName('Client Details');
         const clientName = getClientNames_(clientDetails).get(email) || '';
@@ -1712,11 +1726,25 @@ function parseAllWorkoutLogs() {
         const workoutSummary = exerciseDetails.join('; ');
         const workoutNotes = `BW: ${bodyweight} lb | Gym Score: ${gymScore.toFixed(2)} | ${validSets.length} total sets`;
 
-        timeline.appendRow([
-          date, 'Workout', email, clientName, '', workoutSummary,
-          '', '', '', '', '', '', '', '', '', '', '',
-          workoutSummary, '', workoutNotes, '', 'Pending Review', week, month, ''
-        ]);
+        // Build row array with header mapping
+        const timelineRow = new Array(timelineHeaders.length).fill('');
+        timelineRow[findTimelineCol('DateTime')] = date;
+        timelineRow[findTimelineCol('Type')] = 'Workout';
+        timelineRow[findTimelineCol('Client Email')] = email;
+        timelineRow[findTimelineCol('Client Name')] = clientName;
+        timelineRow[findTimelineCol('Details')] = workoutSummary;
+        timelineRow[findTimelineCol('Exercises')] = workoutSummary;
+        timelineRow[findTimelineCol('Workout Notes')] = workoutNotes;
+        timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
+        timelineRow[findTimelineCol('Week')] = week;
+        timelineRow[findTimelineCol('Month')] = month;
+
+        const gymScoreIdx = findTimelineCol('Gym Score');
+        if (gymScoreIdx >= 0) {
+          timelineRow[gymScoreIdx] = gymScore; // Write as number
+        }
+
+        timeline.appendRow(timelineRow);
       }
 
       totalRowsParsed++;
