@@ -1614,6 +1614,7 @@ function parseAllWorkoutLogs() {
     const dateCol = findColumn_(headers, ['submission date', 'date', 'timestamp']);
     const emailCol = findColumn_(headers, EMAIL_LABELS);
     const bwCol = findColumn_(headers, ['current bodyweight', 'bodyweight', 'body weight', 'bw']);
+    const notesCol = findColumn_(headers, ['notes', 'symptoms', 'workout notes', 'comments']);
 
     if (dateCol === -1 || emailCol === -1 || bwCol === -1) {
       Logger.log('  ⚠️ Missing required columns');
@@ -1630,6 +1631,7 @@ function parseAllWorkoutLogs() {
       const date = parseTimestamp(dateStr, ss.getSpreadsheetTimeZone());
       const email = normalizeEmail_(row[emailCol]);
       const bodyweight = parseFloat(row[bwCol]) || 0;
+      const clientNotes = notesCol >= 0 ? String(row[notesCol] || '').trim() : '';
 
       if (!date || !email || !bodyweight) {
         Logger.log(`  ⚠️ Row ${rowIdx + 2}: Missing required data`);
@@ -1749,30 +1751,19 @@ function parseAllWorkoutLogs() {
         safeGymScore, 'Σ(1RM)/N'
       ]);
 
-      // Add to Timeline Master by header lookup
+      // Add to Timeline Master - write only essential columns
       if (timeline && exerciseDetails.length > 0) {
-        const clientDetails = ss.getSheetByName('Client Details');
-        const clientName = getClientNames_(clientDetails).get(email) || '';
-        const dateObj = parseDate_(date);
-        const week = getWeekNumber_(dateObj);
-        const month = Utilities.formatDate(dateObj, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
-
         const workoutSummary = exerciseDetails.join('; ');
-        const workoutNotes = `BW: ${bodyweight} lb | Gym Score: ${safeGymScore} | ${validSets.length} total sets`;
 
-        // Build row array with header mapping
+        // Build row array with header mapping (only populate essential columns)
         const timelineRow = new Array(timelineHeaders.length).fill('');
         timelineRow[findTimelineCol('DateTime')] = date;
         timelineRow[findTimelineCol('Type')] = 'Workout';
         timelineRow[findTimelineCol('Client Email')] = email;
-        timelineRow[findTimelineCol('Client Name')] = clientName;
         timelineRow[findTimelineCol('Details')] = workoutSummary;
-        timelineRow[findTimelineCol('Exercises')] = workoutSummary;
         timelineRow[findTimelineCol('Workout Sequence')] = sheet.getName();
-        timelineRow[findTimelineCol('Workout Notes')] = workoutNotes;
+        timelineRow[findTimelineCol('Workout Notes')] = clientNotes; // Use client's actual notes
         timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
-        timelineRow[findTimelineCol('Week')] = week;
-        timelineRow[findTimelineCol('Month')] = month;
 
         const gymScoreIdx = findTimelineCol('Gym Score');
         if (gymScoreIdx >= 0) {
