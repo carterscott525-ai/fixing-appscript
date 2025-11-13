@@ -1753,6 +1753,12 @@ function parseAllWorkoutLogs() {
 
       // Add to Timeline Master - write only essential columns
       if (timeline && exerciseDetails.length > 0) {
+        const clientDetails = ss.getSheetByName('Client Details');
+        const clientName = getClientNames_(clientDetails).get(email) || '';
+        const dateObj = parseDate_(date);
+        const week = getWeekNumber_(dateObj);
+        const month = Utilities.formatDate(dateObj, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
+
         const workoutSummary = exerciseDetails.join('; ');
 
         // Build row array with header mapping (only populate essential columns)
@@ -1760,10 +1766,13 @@ function parseAllWorkoutLogs() {
         timelineRow[findTimelineCol('DateTime')] = date;
         timelineRow[findTimelineCol('Type')] = 'Workout';
         timelineRow[findTimelineCol('Client Email')] = email;
+        timelineRow[findTimelineCol('Client Name')] = clientName;
         timelineRow[findTimelineCol('Details')] = workoutSummary;
         timelineRow[findTimelineCol('Workout Sequence')] = sheet.getName();
         timelineRow[findTimelineCol('Workout Notes')] = clientNotes; // Use client's actual notes
         timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
+        timelineRow[findTimelineCol('Week')] = week;
+        timelineRow[findTimelineCol('Month')] = month;
 
         const gymScoreIdx = findTimelineCol('Gym Score');
         if (gymScoreIdx >= 0) {
