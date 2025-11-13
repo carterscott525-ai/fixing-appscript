@@ -217,6 +217,7 @@ function onOpen() {
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
     .addItem('Parse All Workout Logs', 'parseAllWorkoutLogs')
+    .addItem('🔍 Debug Workout Log Structure', 'debugParseStructure')
     .addSeparator()
     .addItem('Clear All Logged Data (Create Template)', 'clearAllLoggedData')
     .addToUi();
@@ -1815,6 +1816,202 @@ function detectExerciseGroups_(headers) {
 
   // Convert to array and filter valid groups (must have at least reps or weight column)
   return Array.from(groups.values()).filter(g => g.repsCol !== -1 || g.weightCol !== -1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// WORKOUT LOG DIAGNOSTICS
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Diagnostic function to reveal parsing bugs in workout logs.
+ * Does NOT modify any sheets - only logs structure and sample data.
+ */
+function debugParseStructure() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let debugLog = [];
+
+  debugLog.push('═══════════════════════════════════════════════════════════');
+  debugLog.push('WORKOUT LOG STRUCTURE DIAGNOSTIC');
+  debugLog.push('═══════════════════════════════════════════════════════════\n');
+
+  // Find all workout log sheets
+  const allSheets = ss.getSheets();
+  const workoutLogSheets = allSheets.filter(sheet =>
+    sheet.getName().toLowerCase().includes('workout log')
+  );
+
+  if (workoutLogSheets.length === 0) {
+    debugLog.push('❌ NO WORKOUT LOG SHEETS FOUND');
+    Logger.log(debugLog.join('\n'));
+    SpreadsheetApp.getUi().alert('No sheets found with "Workout Log" in the name');
+    return;
+  }
+
+  debugLog.push(`✓ Found ${workoutLogSheets.length} workout log sheet(s)\n`);
+
+  // Process each sheet
+  workoutLogSheets.forEach((sheet, sheetIdx) => {
+    debugLog.push(`\n${'='.repeat(60)}`);
+    debugLog.push(`SHEET ${sheetIdx + 1}: "${sheet.getName()}"`);
+    debugLog.push('='.repeat(60));
+
+    if (sheet.getLastRow() <= 1) {
+      debugLog.push('⚠️  No data rows');
+      return;
+    }
+
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const firstDataRow = sheet.getLastRow() > 1 ?
+      sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0] : null;
+
+    // 1. HEADERS AND INDICES
+    debugLog.push('\n📋 HEADERS (with column indices):');
+    headers.forEach((header, idx) => {
+      const headerStr = String(header).substring(0, 50); // Truncate long headers
+      debugLog.push(`  [${idx}] "${headerStr}"`);
+    });
+
+    // 2. DETECT REQUIRED COLUMNS
+    debugLog.push('\n🔍 REQUIRED COLUMNS:');
+    const dateCol = findColumn_(headers, ['submission date', 'date', 'timestamp']);
+    const emailCol = findColumn_(headers, EMAIL_LABELS);
+    const bwCol = findColumn_(headers, ['current bodyweight', 'bodyweight', 'body weight', 'bw']);
+
+    debugLog.push(`  Date Column: ${dateCol} ${dateCol !== -1 ? '✓' : '❌'}`);
+    debugLog.push(`  Email Column: ${emailCol} ${emailCol !== -1 ? '✓' : '❌'}`);
+    debugLog.push(`  Bodyweight Column: ${bwCol} ${bwCol !== -1 ? '✓' : '❌'}`);
+
+    if (dateCol === -1 || emailCol === -1 || bwCol === -1) {
+      debugLog.push('  ❌ MISSING REQUIRED COLUMNS - CANNOT PARSE');
+      return;
+    }
+
+    // 3. DETECT EXERCISE GROUPS
+    debugLog.push('\n🏋️ EXERCISE GROUPS DETECTED:');
+    const exerciseGroups = detectExerciseGroups_(headers);
+
+    if (exerciseGroups.length === 0) {
+      debugLog.push('  ⚠️  No exercise groups found with (Sets), (Reps...), or (Weight...) pattern');
+    } else {
+      exerciseGroups.forEach((group, idx) => {
+        debugLog.push(`  ${idx + 1}. "${group.name}"`);
+        debugLog.push(`     Sets Col: ${group.setsCol >= 0 ? group.setsCol : 'N/A'}`);
+        debugLog.push(`     Reps Col: ${group.repsCol >= 0 ? group.repsCol : 'N/A'}`);
+        debugLog.push(`     Weight Col: ${group.weightCol >= 0 ? group.weightCol : 'N/A'}`);
+      });
+    }
+
+    // 4. SAMPLE ROW DATA
+    if (firstDataRow) {
+      debugLog.push('\n📊 FIRST DATA ROW (Row 2):');
+      debugLog.push(`  Date: "${firstDataRow[dateCol]}" (type: ${typeof firstDataRow[dateCol]})`);
+      debugLog.push(`  Email: "${firstDataRow[emailCol]}"`);
+      debugLog.push(`  Bodyweight: "${firstDataRow[bwCol]}" → Parsed: ${parseFloat(firstDataRow[bwCol]) || 'FAILED'}`);
+
+      debugLog.push('\n  Exercise Data:');
+      exerciseGroups.forEach(group => {
+        debugLog.push(`    ${group.name}:`);
+
+        if (group.setsCol >= 0) {
+          const setsValue = firstDataRow[group.setsCol];
+          debugLog.push(`      Sets: "${setsValue}" (type: ${typeof setsValue})`);
+        }
+
+        if (group.repsCol >= 0) {
+          const repsValue = String(firstDataRow[group.repsCol] || '');
+          debugLog.push(`      Reps Raw: "${repsValue}"`);
+
+          // Test comma parsing
+          const repsList = repsValue.split(',').map(r => parseFloat(r.trim())).filter(r => !isNaN(r));
+          debugLog.push(`      Reps Parsed: [${repsList.join(', ')}] (${repsList.length} values)`);
+        }
+
+        if (group.weightCol >= 0) {
+          const weightValue = String(firstDataRow[group.weightCol] || '');
+          debugLog.push(`      Weight Raw: "${weightValue}"`);
+
+          // Test comma parsing
+          const weightList = weightValue.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w));
+          debugLog.push(`      Weight Parsed: [${weightList.join(', ')}] (${weightList.length} values)`);
+
+          // Test 1RM calculation with first set
+          if (weightList.length > 0 && repsList && repsList.length > 0) {
+            const reps = repsList[0];
+            const weight = weightList[0];
+            const oneRM = weight * (1 + reps / 30);
+            const bodyweight = parseFloat(firstDataRow[bwCol]) || 0;
+            const normalized = bodyweight > 0 ? oneRM / bodyweight : 0;
+
+            debugLog.push(`      🧮 CALCULATION TEST (Set 1):`);
+            debugLog.push(`         Reps: ${reps}, Weight: ${weight}`);
+            debugLog.push(`         1RM = ${weight} × (1 + ${reps}/30) = ${oneRM.toFixed(2)}`);
+            debugLog.push(`         Normalized = ${oneRM.toFixed(2)} / ${bodyweight} = ${normalized.toFixed(3)}`);
+          }
+        }
+      });
+    }
+
+    // 5. COMMA PARSING TESTS
+    debugLog.push('\n🧪 COMMA PARSING TESTS:');
+    const testCases = [
+      '405,405,405,405',
+      '8,9,7,6',
+      '110.120.140',  // Period separator (common bug)
+      '3x5@315',      // Common format
+      'BW',           // Bodyweight marker
+      '20',           // Single value
+      '',             // Empty
+      'AMRAP'         // Text marker
+    ];
+
+    testCases.forEach(testCase => {
+      const parsed = testCase.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+      debugLog.push(`  "${testCase}" → [${parsed.join(', ')}] ${parsed.length === 0 ? '❌ FAILED' : '✓'}`);
+    });
+
+    // 6. PATTERN MATCHING TESTS
+    debugLog.push('\n🔎 HEADER PATTERN MATCHING:');
+    const testHeaders = [
+      'Incline Barbell Bench-Press (Sets)',
+      'Incline Barbell Bench-Press (Reps,Reps,Reps,Reps)',
+      'Incline Barbell Bench-Press (Weight,Weight,Weight,Weight)',
+      'Pull-Ups',  // Old format without parentheses
+      'Squats (Sets)',
+      'Deadlift (Weight)'
+    ];
+
+    testHeaders.forEach(testHeader => {
+      const setsMatch = testHeader.match(/^(.+?)\s*\(sets\)\s*$/i);
+      const repsMatch = testHeader.match(/^(.+?)\s*\(reps[,\s\)]/i);
+      const weightMatch = testHeader.match(/^(.+?)\s*\(weight[,\s\)]/i);
+
+      const matches = [];
+      if (setsMatch) matches.push('Sets');
+      if (repsMatch) matches.push('Reps');
+      if (weightMatch) matches.push('Weight');
+
+      debugLog.push(`  "${testHeader}" → ${matches.length > 0 ? matches.join(', ') : '❌ NO MATCH'}`);
+    });
+  });
+
+  debugLog.push('\n═══════════════════════════════════════════════════════════');
+  debugLog.push('END DIAGNOSTIC');
+  debugLog.push('═══════════════════════════════════════════════════════════');
+
+  // Output to Logger
+  const fullLog = debugLog.join('\n');
+  Logger.log(fullLog);
+
+  // Output to UI (first 3000 chars due to alert length limit)
+  const truncatedLog = fullLog.substring(0, 3000);
+  const alertMessage = truncatedLog +
+    (fullLog.length > 3000 ? `\n\n... (${fullLog.length - 3000} more chars in Logger)` : '');
+
+  SpreadsheetApp.getUi().alert(
+    '🔍 Workout Log Diagnostic Complete',
+    'Check the Execution Log (View → Execution log) for full details.\n\nSummary:\n\n' + alertMessage,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
