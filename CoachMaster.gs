@@ -97,7 +97,7 @@ const WORKOUT_POOL_HEADERS = [
 ];
 
 const PARSED_WORKOUTS_HEADERS = [
-  'Date', 'Email', 'Exercise', 'Set', 'Reps', 'Weight', '1RM', 'Normalized'
+  'Date', 'Email', 'Source Sheet', 'Exercise', 'Set', 'Reps', 'Weight', '1RM', 'Normalized'
 ];
 
 const GYM_SCORE_HEADERS = [
@@ -1664,7 +1664,7 @@ function parseAllWorkoutLogs() {
             allSets.push({ exercise: group.name, setNum, reps, weight, oneRM, normalized });
 
             parsedSheet.appendRow([
-              date, email, group.name, setNum,
+              date, email, sheet.getName(), group.name, setNum,
               reps || '', weight || '',
               oneRM ? oneRM.toFixed(2) : '',
               normalized ? normalized.toFixed(3) : ''
@@ -1715,7 +1715,7 @@ function parseAllWorkoutLogs() {
           allSets.push({ exercise: exerciseName, setNum: 1, reps, weight: bodyweight, oneRM, normalized });
 
           parsedSheet.appendRow([
-            date, email, exerciseName, 1,
+            date, email, sheet.getName(), exerciseName, 1,
             reps, bodyweight,
             oneRM.toFixed(2),
             normalized.toFixed(3)
