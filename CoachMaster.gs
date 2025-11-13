@@ -59,7 +59,7 @@ const TIMELINE_HEADERS = [
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
   'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Other Score',
   'Meal Notes', 'Timing Minutes', 'Meal Status', 'Last Updated',
-  'Exercises', 'Sets/Reps', 'Workout Notes',
+  'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Gym Score',
   'Coach Response', 'Response Status', 'Week', 'Month', 'Submission ID'
 ];
 
@@ -97,7 +97,7 @@ const WORKOUT_POOL_HEADERS = [
 ];
 
 const PARSED_WORKOUTS_HEADERS = [
-  'Date', 'Email', 'Source Sheet', 'Exercise', 'Set', 'Reps', 'Weight', '1RM', 'Normalized'
+  'Date', 'Email', 'Workout Sequence', 'Exercise', 'Set', 'Reps', 'Weight', '1RM', 'Normalized'
 ];
 
 const GYM_SCORE_HEADERS = [
@@ -1762,6 +1762,7 @@ function parseAllWorkoutLogs() {
         timelineRow[findTimelineCol('Client Name')] = clientName;
         timelineRow[findTimelineCol('Details')] = workoutSummary;
         timelineRow[findTimelineCol('Exercises')] = workoutSummary;
+        timelineRow[findTimelineCol('Workout Sequence')] = sheet.getName();
         timelineRow[findTimelineCol('Workout Notes')] = workoutNotes;
         timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
         timelineRow[findTimelineCol('Week')] = week;
