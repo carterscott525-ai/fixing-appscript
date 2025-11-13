@@ -1689,7 +1689,7 @@ function parseAllWorkoutLogs() {
           if (isNaN(reps) || reps <= 0) return;
 
           const oneRM = bodyweight * (1 + reps / 30);
-          const normalized = oneRM / bodyweight;
+          const normalized = bodyweight > 0 ? oneRM / bodyweight : 0;
 
           allSets.push({ exercise: exerciseName, setNum: 1, reps, weight: bodyweight, oneRM, normalized });
 
@@ -1705,14 +1705,21 @@ function parseAllWorkoutLogs() {
         });
       }
 
-      // Calculate Gym Score
-      const validSets = allSets.filter(s => s.normalized > 0);
+      // Calculate Gym Score with type safety
+      const validSets = allSets.filter(s => {
+        const n = Number(s.normalized);
+        return !isNaN(n) && isFinite(n) && n > 0;
+      });
+
       const gymScore = validSets.length > 0 ?
-        validSets.reduce((sum, s) => sum + s.normalized, 0) / validSets.length : 0;
+        validSets.reduce((sum, s) => Number(sum) + Number(s.normalized), 0) / validSets.length : 0;
+
+      // Validate final gymScore
+      const safeGymScore = (!isNaN(gymScore) && isFinite(gymScore)) ? Number(gymScore.toFixed(2)) : 0;
 
       scoreSheet.appendRow([
         date, email, bodyweight, validSets.length,
-        gymScore.toFixed(2), 'Σ(1RM/BW)/N'
+        safeGymScore, 'Σ(1RM/BW)/N'
       ]);
 
       // Add to Timeline Master by header lookup
@@ -1724,7 +1731,7 @@ function parseAllWorkoutLogs() {
         const month = Utilities.formatDate(dateObj, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
         const workoutSummary = exerciseDetails.join('; ');
-        const workoutNotes = `BW: ${bodyweight} lb | Gym Score: ${gymScore.toFixed(2)} | ${validSets.length} total sets`;
+        const workoutNotes = `BW: ${bodyweight} lb | Gym Score: ${safeGymScore} | ${validSets.length} total sets`;
 
         // Build row array with header mapping
         const timelineRow = new Array(timelineHeaders.length).fill('');
@@ -1741,7 +1748,7 @@ function parseAllWorkoutLogs() {
 
         const gymScoreIdx = findTimelineCol('Gym Score');
         if (gymScoreIdx >= 0) {
-          timelineRow[gymScoreIdx] = gymScore; // Write as number
+          timelineRow[gymScoreIdx] = safeGymScore; // Write as validated number
         }
 
         timeline.appendRow(timelineRow);
