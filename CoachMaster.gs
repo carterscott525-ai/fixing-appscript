@@ -56,11 +56,12 @@ const OUTPUT_TABS = new Set([
 
 const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
-  'Details', 'Ingredients', 'Portions', 'Cooking Method',
-  'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Other Score',
-  'Meal Notes', 'Timing Minutes', 'Meal Status', 'Last Updated',
+  'Ingredients', 'Portions', 'Cooking Method',
+  'Meal Timing Category', 'Fuel Score', 'Recovery Score',
+  'Meal Notes', 'Timing Minutes', 'Response Status',
+  'Meal Status', 'Last Updated',
   'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Gym Score',
-  'Coach Response', 'Response Status', 'Week', 'Month', 'Submission ID'
+  'Coach Response', 'Week', 'Month', 'Submission ID'
 ];
 
 const MEAL_POOL_HEADERS = [
@@ -1767,7 +1768,6 @@ function parseAllWorkoutLogs() {
         timelineRow[findTimelineCol('Type')] = 'Workout';
         timelineRow[findTimelineCol('Client Email')] = email;
         timelineRow[findTimelineCol('Client Name')] = clientName;
-        timelineRow[findTimelineCol('Details')] = workoutSummary;
         timelineRow[findTimelineCol('Workout Sequence')] = sheet.getName();
         timelineRow[findTimelineCol('Workout Notes')] = clientNotes; // Use client's actual notes
         timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
