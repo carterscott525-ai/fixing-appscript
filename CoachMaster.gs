@@ -1911,7 +1911,7 @@ function debugParseStructure() {
 
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const firstDataRow = sheet.getLastRow() > 1 ?
-      sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0] : null;
+      sheet.getRange(2, 1, 1, sheet.getLastColumn()).getDisplayValues()[0] : null;
 
     // 1. HEADERS AND INDICES
     debugLog.push('\n📋 HEADERS (with column indices):');
@@ -1957,6 +1957,15 @@ function debugParseStructure() {
       debugLog.push(`  Email: "${firstDataRow[emailCol]}"`);
       debugLog.push(`  Bodyweight: "${firstDataRow[bwCol]}" → Parsed: ${parseFloat(firstDataRow[bwCol]) || 'FAILED'}`);
 
+      // Split function matching parseAllWorkoutLogs()
+      const split = s => String(s||'')
+        .replace(/\(failed\)/gi, '')
+        .split(/[,.]+/)
+        .map(t => t.trim())
+        .filter(t => t && !['BW', 'AMRAP'].includes(t.toUpperCase()))
+        .map(Number)
+        .filter(n => !isNaN(n));
+
       debugLog.push('\n  Exercise Data:');
       exerciseGroups.forEach(group => {
         debugLog.push(`    ${group.name}:`);
@@ -1974,8 +1983,8 @@ function debugParseStructure() {
           const repsValue = String(firstDataRow[group.repsCol] || '');
           debugLog.push(`      Reps Raw: "${repsValue}"`);
 
-          // Test comma parsing
-          repsList = repsValue.split(',').map(r => parseFloat(r.trim())).filter(r => !isNaN(r));
+          // Use matching split function
+          repsList = split(repsValue);
           debugLog.push(`      Reps Parsed: [${repsList.join(', ')}] (${repsList.length} values)`);
         }
 
@@ -1983,8 +1992,8 @@ function debugParseStructure() {
           const weightValue = String(firstDataRow[group.weightCol] || '');
           debugLog.push(`      Weight Raw: "${weightValue}"`);
 
-          // Test comma parsing
-          weightList = weightValue.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w));
+          // Use matching split function
+          weightList = split(weightValue);
           debugLog.push(`      Weight Parsed: [${weightList.join(', ')}] (${weightList.length} values)`);
 
           // Test 1RM calculation with first set
@@ -2004,8 +2013,8 @@ function debugParseStructure() {
       });
     }
 
-    // 5. COMMA PARSING TESTS
-    debugLog.push('\n🧪 COMMA PARSING TESTS:');
+    // 5. COMMA/DOT PARSING TESTS (using same split function as parser)
+    debugLog.push('\n🧪 COMMA/DOT PARSING TESTS:');
     const testCases = [
       '405,405,405,405',
       '8,9,7,6',
@@ -2017,9 +2026,19 @@ function debugParseStructure() {
       'AMRAP'         // Text marker
     ];
 
+    // Use same split function as parser
+    const testSplit = s => String(s||'')
+      .replace(/\(failed\)/gi, '')
+      .split(/[,.]+/)
+      .map(t => t.trim())
+      .filter(t => t && !['BW', 'AMRAP'].includes(t.toUpperCase()))
+      .map(Number)
+      .filter(n => !isNaN(n));
+
     testCases.forEach(testCase => {
-      const parsed = testCase.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
-      debugLog.push(`  "${testCase}" → [${parsed.join(', ')}] ${parsed.length === 0 ? '❌ FAILED' : '✓'}`);
+      const parsed = testSplit(testCase);
+      const expected = ['', 'BW', 'AMRAP'].includes(testCase) ? '❌ (Expected)' : parsed.length === 0 ? '❌ FAILED' : '✓';
+      debugLog.push(`  "${testCase}" → [${parsed.join(', ')}] ${expected}`);
     });
 
     // 6. PATTERN MATCHING TESTS
