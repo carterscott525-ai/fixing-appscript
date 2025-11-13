@@ -1709,21 +1709,21 @@ function parseAllWorkoutLogs() {
         });
       }
 
-      // Calculate Gym Score with type safety
+      // Calculate Gym Score as average 1RM (not normalized)
       const validSets = allSets.filter(s => {
-        const n = Number(s.normalized);
-        return !isNaN(n) && isFinite(n) && n > 0;
+        const oneRM = Number(s.oneRM);
+        return !isNaN(oneRM) && isFinite(oneRM) && oneRM > 0;
       });
 
       const gymScore = validSets.length > 0 ?
-        validSets.reduce((sum, s) => Number(sum) + Number(s.normalized), 0) / validSets.length : 0;
+        validSets.reduce((sum, s) => Number(sum) + Number(s.oneRM), 0) / validSets.length : 0;
 
       // Validate final gymScore
       const safeGymScore = (!isNaN(gymScore) && isFinite(gymScore)) ? Number(gymScore.toFixed(2)) : 0;
 
       scoreSheet.appendRow([
         date, email, bodyweight, validSets.length,
-        safeGymScore, 'Σ(1RM/BW)/N'
+        safeGymScore, 'Σ(1RM)/N'
       ]);
 
       // Add to Timeline Master by header lookup
