@@ -58,10 +58,10 @@ const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Ingredients', 'Portions', 'Cooking Method',
   'Meal Timing Category', 'Fuel Score', 'Recovery Score',
-  'Meal Notes', 'Timing Minutes', 'Response Status',
+  'Timing Minutes', 'Coach Response', 'Response Status',
   'Meal Status', 'Last Updated',
   'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Gym Score',
-  'Coach Response', 'Week', 'Month', 'Submission ID'
+  'Week', 'Month', 'Submission ID'
 ];
 
 const MEAL_POOL_HEADERS = [
@@ -1499,9 +1499,10 @@ function reapplySheetFormatting_(sheet, sheetName) {
   try {
     // Reapply date/time formatting
     if (sheetName === 'Timeline Master' || sheetName === 'Timeline Archive') {
-      formatDateTimeColumn_(sheet, 1);  // DateTime column
-      formatDateTimeColumn_(sheet, 17); // Last Updated column
-      addStatusValidation_(sheet, 22);  // Response Status column
+      formatDateTimeColumn_(sheet, 1);   // DateTime column
+      formatDateTimeColumn_(sheet, 16);  // Last Updated column
+      addMealTimingValidation_(sheet, 9);  // Meal Timing Category column (I)
+      addStatusValidation_(sheet, 14);   // Response Status column (N)
     } else if (sheetName === 'Meal Pool' || sheetName === 'Meal Image+Info') {
       formatDateTimeColumn_(sheet, 3);  // Submission Time column
     } else if (sheetName === 'Workout Pool') {
@@ -1530,7 +1531,7 @@ function archiveOldEntries(ss) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - ARCHIVE_AFTER_DAYS);
 
-  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 25).getValues(); // 25 columns now
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 24).getValues(); // 24 columns
   const toArchive = [];
   const rowsToDelete = [];
 
@@ -1544,9 +1545,9 @@ function archiveOldEntries(ss) {
 
   if (toArchive.length > 0) {
     const nextRow = archive.getLastRow() + 1;
-    archive.getRange(nextRow, 1, toArchive.length, 25).setValues(toArchive); // 25 columns
+    archive.getRange(nextRow, 1, toArchive.length, 24).setValues(toArchive); // 24 columns
     formatDateTimeColumn_(archive, 1);
-    formatDateTimeColumn_(archive, 17);
+    formatDateTimeColumn_(archive, 16);
 
     // Delete from timeline in reverse order
     rowsToDelete.reverse().forEach(row => {
@@ -2258,6 +2259,17 @@ function formatDateTimeColumn_(sheet, colNum) {
 function addStatusValidation_(sheet, colNum) {
   const rule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['Pending Review', 'Ready to Send', 'Sent'], true)
+    .setAllowInvalid(false)
+    .build();
+
+  if (sheet.getMaxRows() > 1) {
+    sheet.getRange(2, colNum, sheet.getMaxRows() - 1, 1).setDataValidation(rule);
+  }
+}
+
+function addMealTimingValidation_(sheet, colNum) {
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['pre-workout', 'post-workout', 'other'], true)
     .setAllowInvalid(false)
     .build();
 
