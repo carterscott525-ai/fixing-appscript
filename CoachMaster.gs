@@ -1912,6 +1912,10 @@ function debugParseStructure() {
       exerciseGroups.forEach(group => {
         debugLog.push(`    ${group.name}:`);
 
+        // Declare variables outside blocks to avoid scope issues
+        let repsList = [];
+        let weightList = [];
+
         if (group.setsCol >= 0) {
           const setsValue = firstDataRow[group.setsCol];
           debugLog.push(`      Sets: "${setsValue}" (type: ${typeof setsValue})`);
@@ -1922,7 +1926,7 @@ function debugParseStructure() {
           debugLog.push(`      Reps Raw: "${repsValue}"`);
 
           // Test comma parsing
-          const repsList = repsValue.split(',').map(r => parseFloat(r.trim())).filter(r => !isNaN(r));
+          repsList = repsValue.split(',').map(r => parseFloat(r.trim())).filter(r => !isNaN(r));
           debugLog.push(`      Reps Parsed: [${repsList.join(', ')}] (${repsList.length} values)`);
         }
 
@@ -1931,11 +1935,11 @@ function debugParseStructure() {
           debugLog.push(`      Weight Raw: "${weightValue}"`);
 
           // Test comma parsing
-          const weightList = weightValue.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w));
+          weightList = weightValue.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w));
           debugLog.push(`      Weight Parsed: [${weightList.join(', ')}] (${weightList.length} values)`);
 
           // Test 1RM calculation with first set
-          if (weightList.length > 0 && repsList && repsList.length > 0) {
+          if (weightList.length > 0 && repsList.length > 0) {
             const reps = repsList[0];
             const weight = weightList[0];
             const oneRM = weight * (1 + reps / 30);
