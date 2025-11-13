@@ -2224,3 +2224,203 @@ function getWeekNumber_(date) {
   const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
   return `Week ${weekNo}`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// DIAGNOSTIC FUNCTIONS - READ-ONLY
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Diagnostic 1: Compare getValues() vs getDisplayValues() for Workout Log 2
+ * Proves whether Sheets is coercing Jotform-imported cells
+ */
+function diagValuesVsDisplay() {
+  console.log('═══ DIAGNOSTIC 1: Values vs Display ═══');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Workout Log 2');
+
+  if (!sheet) {
+    console.log('❌ Sheet "Workout Log 2" not found');
+    return;
+  }
+
+  if (sheet.getLastRow() < 2) {
+    console.log('❌ No data in row 2');
+    return;
+  }
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const row2Values = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const row2Display = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const row2Formats = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getNumberFormats()[0];
+
+  console.log('\n📋 Headers:');
+  headers.forEach((h, i) => console.log(`  [${i}] "${h}"`));
+
+  // Find first exercise group
+  let repsCol = -1;
+  let weightCol = -1;
+
+  for (let i = 0; i < headers.length; i++) {
+    const h = String(headers[i]).toLowerCase();
+    if (h.includes('(reps') && repsCol === -1) repsCol = i;
+    if (h.includes('(weight') && weightCol === -1) weightCol = i;
+  }
+
+  if (repsCol === -1 || weightCol === -1) {
+    console.log('❌ No exercise columns found with (Reps or (Weight patterns');
+    return;
+  }
+
+  console.log('\n🏋️ First Exercise Group:');
+  console.log(`  Reps Column: [${repsCol}] "${headers[repsCol]}"`);
+  console.log(`  Weight Column: [${weightCol}] "${headers[weightCol]}"`);
+
+  // Reps analysis
+  console.log('\n📊 REPS ANALYSIS:');
+  console.log(`  getValues(): ${JSON.stringify(row2Values[repsCol])} (type: ${typeof row2Values[repsCol]})`);
+  console.log(`  getDisplayValues(): "${row2Display[repsCol]}" (type: ${typeof row2Display[repsCol]})`);
+  console.log(`  Number Format: "${row2Formats[repsCol]}"`);
+
+  const split = s => String(s||'').split(/[,\s/|.]+/).filter(Boolean);
+  console.log(`  Split(getValues Reps) -> [${split(row2Values[repsCol]).join(', ')}]`);
+  console.log(`  Split(getDisplayValues Reps) -> [${split(row2Display[repsCol]).join(', ')}]`);
+
+  // Weight analysis
+  console.log('\n⚖️ WEIGHT ANALYSIS:');
+  console.log(`  getValues(): ${JSON.stringify(row2Values[weightCol])} (type: ${typeof row2Values[weightCol]})`);
+  console.log(`  getDisplayValues(): "${row2Display[weightCol]}" (type: ${typeof row2Display[weightCol]})`);
+  console.log(`  Number Format: "${row2Formats[weightCol]}"`);
+  console.log(`  Split(getValues Weight) -> [${split(row2Values[weightCol]).join(', ')}]`);
+  console.log(`  Split(getDisplayValues Weight) -> [${split(row2Display[weightCol]).join(', ')}]`);
+
+  console.log('\n✅ Diagnostic 1 complete\n');
+}
+
+/**
+ * Diagnostic 2: Check locale and number formats
+ * Explains why "110.120.140" may become 110.12 or why commas are dropped
+ */
+function diagLocaleAndFormats() {
+  console.log('═══ DIAGNOSTIC 2: Locale and Formats ═══');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const locale = ss.getSpreadsheetLocale();
+
+  console.log(`\n🌍 Spreadsheet Locale: "${locale}"`);
+  console.log(`   (Determines how numbers are interpreted)`);
+  console.log(`   - en_US: period=decimal, comma=thousands`);
+  console.log(`   - de_DE: comma=decimal, period=thousands`);
+
+  const sheet = ss.getSheetByName('Workout Log 2');
+
+  if (!sheet) {
+    console.log('\n❌ Sheet "Workout Log 2" not found');
+    return;
+  }
+
+  if (sheet.getLastRow() < 2) {
+    console.log('\n❌ No data in row 2');
+    return;
+  }
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const row2Formats = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getNumberFormats()[0];
+
+  console.log('\n📐 Number Formats for Exercise Columns:');
+
+  headers.forEach((h, i) => {
+    const headerStr = String(h).toLowerCase();
+    if (headerStr.includes('(reps') || headerStr.includes('(weight')) {
+      console.log(`\n  [${i}] "${h}"`);
+      console.log(`      Format: "${row2Formats[i]}"`);
+      console.log(`      Explanation: ${row2Formats[i] === '' ? 'Automatic (Sheets decides)' : 'Custom format applied'}`);
+    }
+  });
+
+  console.log('\n💡 Why "110.120.140" might become 110.12:');
+  console.log(`   - If locale is "${locale}" and format is automatic:`);
+  console.log(`   - Sheets may interpret periods as decimal separators`);
+  console.log(`   - Result: "110.120.140" → 110.12 (truncated after 2nd decimal)`);
+  console.log(`   - Or: interpreted as thousands → 110120.14`);
+
+  console.log('\n✅ Diagnostic 2 complete\n');
+}
+
+/**
+ * Diagnostic 3: Verify Timeline Master column mapping
+ * Confirms Gym Score and other columns are correctly targeted
+ */
+function diagTimelineMappingAndLastRows() {
+  console.log('═══ DIAGNOSTIC 3: Timeline Mapping ═══');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const timeline = ss.getSheetByName('Timeline Master');
+
+  if (!timeline) {
+    console.log('❌ Sheet "Timeline Master" not found');
+    return;
+  }
+
+  if (timeline.getLastRow() < 1) {
+    console.log('❌ Timeline Master has no headers');
+    return;
+  }
+
+  const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getDisplayValues()[0];
+
+  console.log('\n📋 Timeline Master Headers:');
+  headers.forEach((h, i) => console.log(`  [${i}] "${h}"`));
+
+  // Find key columns (case-insensitive)
+  const findCol = (name) => {
+    const nameLower = name.toLowerCase();
+    return headers.findIndex(h => String(h).toLowerCase() === nameLower);
+  };
+
+  const dateTimeCol = findCol('datetime');
+  const gymScoreCol = findCol('gym score');
+  const emailCol = findCol('client email');
+  const ingredientsCol = findCol('ingredients');
+  const cookingMethodCol = findCol('cooking method');
+  const notesCol = findCol('notes');
+  const workoutNotesCol = findCol('workout notes');
+
+  console.log('\n🎯 Key Column Indices:');
+  console.log(`  DateTime: ${dateTimeCol >= 0 ? `[${dateTimeCol}] ✓` : '❌ NOT FOUND'}`);
+  console.log(`  Gym Score: ${gymScoreCol >= 0 ? `[${gymScoreCol}] ✓` : '❌ NOT FOUND'}`);
+  console.log(`  Client Email: ${emailCol >= 0 ? `[${emailCol}] ✓` : '❌ NOT FOUND'}`);
+  console.log(`  Ingredients: ${ingredientsCol >= 0 ? `[${ingredientsCol}]` : '(not found)'}`);
+  console.log(`  Cooking Method: ${cookingMethodCol >= 0 ? `[${cookingMethodCol}]` : '(not found)'}`);
+  console.log(`  Workout Notes: ${workoutNotesCol >= 0 ? `[${workoutNotesCol}]` : '(not found)'}`);
+
+  if (timeline.getLastRow() < 2) {
+    console.log('\n⚠️ No data rows in Timeline Master');
+    console.log('✅ Diagnostic 3 complete\n');
+    return;
+  }
+
+  // Get last 1-2 rows
+  const numRows = Math.min(2, timeline.getLastRow() - 1);
+  const startRow = timeline.getLastRow() - numRows + 1;
+  const lastRows = timeline.getRange(startRow, 1, numRows, timeline.getLastColumn()).getValues();
+
+  console.log(`\n📊 Last ${numRows} Data Row(s):`);
+
+  lastRows.forEach((row, idx) => {
+    console.log(`\n  Row ${startRow + idx}:`);
+    console.log(`    DateTime: ${dateTimeCol >= 0 ? row[dateTimeCol] : 'N/A'}`);
+    console.log(`    Client Email: ${emailCol >= 0 ? row[emailCol] : 'N/A'}`);
+    console.log(`    Gym Score: ${gymScoreCol >= 0 ? row[gymScoreCol] : 'N/A'}`);
+
+    // Find narrative (first non-empty from Ingredients, Cooking Method, Workout Notes)
+    let narrative = '';
+    if (ingredientsCol >= 0 && row[ingredientsCol]) narrative = row[ingredientsCol];
+    else if (cookingMethodCol >= 0 && row[cookingMethodCol]) narrative = row[cookingMethodCol];
+    else if (workoutNotesCol >= 0 && row[workoutNotesCol]) narrative = row[workoutNotesCol];
+
+    console.log(`    Narrative: ${narrative ? String(narrative).substring(0, 100) : '(empty)'}`);
+  });
+
+  console.log('\n✅ Diagnostic 3 complete\n');
+}
