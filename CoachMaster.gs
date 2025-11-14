@@ -53,7 +53,7 @@ const OUTPUT_TABS = new Set([
 // ═══════════════════════════════════════════════════════════════════════
 
 const TIMELINE_HEADERS = [
-  'DateTime', 'Type', 'Start Time', 'Client Email', 'Client Name', 'Image URL',
+  'DateTime', 'Client Email', 'Client Name', 'Type', 'Start Time', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
   'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Other Score',
   'Meal Notes', 'Timing Minutes', 'Meal Status', 'Last Updated',
@@ -123,10 +123,10 @@ function setupCoachMaster() {
 
   // Create Timeline Master with new meal tracking columns
   let timeline = getOrCreateSheet_(ss, 'Timeline Master', TIMELINE_HEADERS, '#1976D2');
-  addStatusValidation_(timeline, 23); // Response Status column (was 22, now 23)
+  addStatusValidation_(timeline, 23); // Response Status column
   formatDateTimeColumn_(timeline, 1); // DateTime column
-  formatDateTimeColumn_(timeline, 3); // Start Time column
-  formatDateTimeColumn_(timeline, 18); // Last Updated column (was 17, now 18)
+  formatDateTimeColumn_(timeline, 5); // Start Time column
+  formatDateTimeColumn_(timeline, 18); // Last Updated column
   Logger.log(`✓ Timeline Master ready`);
 
   // Create Meal Pool
@@ -157,8 +157,8 @@ function setupCoachMaster() {
   // Create Timeline Archive
   let archive = getOrCreateSheet_(ss, 'Timeline Archive', TIMELINE_HEADERS, '#757575');
   formatDateTimeColumn_(archive, 1); // DateTime column
-  formatDateTimeColumn_(archive, 3); // Start Time column
-  formatDateTimeColumn_(archive, 18); // Last Updated column (was 17, now 18)
+  formatDateTimeColumn_(archive, 5); // Start Time column
+  formatDateTimeColumn_(archive, 18); // Last Updated column
   Logger.log(`✓ Timeline Archive ready`);
 
   // Create Exercise Dictionary (optional)
@@ -1039,7 +1039,7 @@ function buildTimelineMaster(ss) {
     const existingData = timeline.getRange(2, 1, timeline.getLastRow() - 1, 26).getValues();
     existingData.forEach(row => {
       const submissionId = String(row[25] || '').trim(); // Column 26 (index 25)
-      const email = String(row[3] || '').trim(); // Column 4 (index 3)
+      const email = String(row[1] || '').trim(); // Column 2 (index 1)
       const dateTime = row[0];
 
       // Primary key: DateTime_Email_SubmissionID
@@ -1084,10 +1084,10 @@ function buildTimelineMaster(ss) {
       // 26 columns total (added Start Time column)
       newEntries.push([
         submissionTime,           // 1. DateTime
-        'Meal',                   // 2. Type
-        '',                       // 3. Start Time (NEW)
-        email,                    // 4. Client Email
-        clientName,               // 5. Client Name
+        email,                    // 2. Client Email
+        clientName,               // 3. Client Name
+        'Meal',                   // 4. Type
+        '',                       // 5. Start Time (NEW)
         imageUrl,                 // 6. Image URL
         mealName,                 // 7. Details
         ingredients,              // 8. Ingredients
@@ -1140,10 +1140,10 @@ function buildTimelineMaster(ss) {
       // 26 columns total (added Start Time column)
       newEntries.push([
         dateTime,                 // 1. DateTime
-        'Workout',                // 2. Type
-        startTime,                // 3. Start Time (NEW - looked up from workout logs)
-        email,                    // 4. Client Email
-        clientName,               // 5. Client Name
+        email,                    // 2. Client Email
+        clientName,               // 3. Client Name
+        'Workout',                // 4. Type
+        startTime,                // 5. Start Time (NEW - looked up from workout logs)
         '',                       // 6. Image URL
         workout.name,             // 7. Details
         '',                       // 8. Ingredients
@@ -1173,7 +1173,7 @@ function buildTimelineMaster(ss) {
     const nextRow = timeline.getLastRow() + 1;
     timeline.getRange(nextRow, 1, newEntries.length, 26).setValues(newEntries);
     formatDateTimeColumn_(timeline, 1);
-    formatDateTimeColumn_(timeline, 3);
+    formatDateTimeColumn_(timeline, 5);
     formatDateTimeColumn_(timeline, 18);
 
     // Sort by DateTime desc
@@ -1202,13 +1202,13 @@ function sendPendingResponses(ss) {
     const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 23).getValues();
 
     for (let i = 0; i < data.length; i++) {
-      const response = String(data[i][21] || '').trim(); // Coach Response column (was 20, now 21)
-      const status = String(data[i][22] || '').trim();   // Response Status column (was 21, now 22)
+      const response = String(data[i][21] || '').trim(); // Coach Response column (column 22, index 21)
+      const status = String(data[i][22] || '').trim();   // Response Status column (column 23, index 22)
 
       if (response && status === 'Ready to Send') {
-        const email = String(data[i][3] || '').trim();   // Client Email (was 2, now 3)
-        const type = String(data[i][1] || '').trim();
-        const details = String(data[i][6] || '').trim(); // Details (was 5, now 6)
+        const email = String(data[i][1] || '').trim();   // Client Email (column 2, index 1)
+        const type = String(data[i][3] || '').trim();    // Type (column 4, index 3)
+        const details = String(data[i][6] || '').trim(); // Details (column 7, index 6)
         const dateTime = data[i][0];
 
         const sent = sendResponseEmail_(email, type, details, dateTime, response);
@@ -1401,7 +1401,7 @@ function archiveOldEntries(ss) {
     const nextRow = archive.getLastRow() + 1;
     archive.getRange(nextRow, 1, toArchive.length, 26).setValues(toArchive); // 26 columns
     formatDateTimeColumn_(archive, 1);
-    formatDateTimeColumn_(archive, 3);
+    formatDateTimeColumn_(archive, 5);
     formatDateTimeColumn_(archive, 18);
 
     // Delete from timeline in reverse order
