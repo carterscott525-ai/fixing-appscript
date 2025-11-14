@@ -1418,6 +1418,15 @@ function clearAllLoggedData() {
       // Update headers to match current constants
       if (sheetConfig.headers) {
         sheet.getRange(1, 1, 1, sheetConfig.headers.length).setValues([sheetConfig.headers]);
+
+        // Resize sheet to match header count (remove extra columns)
+        const currentCols = sheet.getMaxColumns();
+        const targetCols = sheetConfig.headers.length;
+        if (currentCols > targetCols) {
+          sheet.deleteColumns(targetCols + 1, currentCols - targetCols);
+          Logger.log(`  ✓ ${sheetConfig.name}: Removed ${currentCols - targetCols} extra column(s)`);
+        }
+
         Logger.log(`  ✓ ${sheetConfig.name}: Updated headers`);
       }
 
