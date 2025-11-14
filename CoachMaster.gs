@@ -1733,21 +1733,21 @@ function parseAllWorkoutLogs() {
         });
       }
 
-      // Calculate Workout Score as average normalized (1RM/BW)
+      // Calculate Workout Score as average 1RM (absolute strength)
       const validSets = allSets.filter(s => {
-        const normalized = Number(s.normalized);
-        return !isNaN(normalized) && isFinite(normalized) && normalized > 0;
+        const oneRM = Number(s.oneRM);
+        return !isNaN(oneRM) && isFinite(oneRM) && oneRM > 0;
       });
 
       const workoutScore = validSets.length > 0 ?
-        validSets.reduce((sum, s) => Number(sum) + Number(s.normalized), 0) / validSets.length : 0;
+        validSets.reduce((sum, s) => Number(sum) + Number(s.oneRM), 0) / validSets.length : 0;
 
       // Validate final workoutScore
       const safeWorkoutScore = (!isNaN(workoutScore) && isFinite(workoutScore)) ? Number(workoutScore.toFixed(2)) : 0;
 
       scoreSheet.appendRow([
         date, email, bodyweight, validSets.length,
-        safeWorkoutScore, 'Σ(1RM/BW)/N'
+        safeWorkoutScore, 'Σ(1RM)/N'
       ]);
 
       // Add to Timeline Master - write only essential columns
