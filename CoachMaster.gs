@@ -57,11 +57,10 @@ const OUTPUT_TABS = new Set([
 const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Ingredients', 'Portions', 'Cooking Method',
-  'Meal Timing Category', 'Fuel Score', 'Recovery Score',
+  'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Micronutrient Score',
   'Timing Minutes', 'Coach Response', 'Response Status',
-  'Meal Status', 'Last Updated',
   'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Gym Score',
-  'Week', 'Month', 'Submission ID'
+  'Week'
 ];
 
 const MEAL_POOL_HEADERS = [
@@ -1500,10 +1499,9 @@ function reapplySheetFormatting_(sheet, sheetName) {
   try {
     // Reapply date/time formatting
     if (sheetName === 'Timeline Master' || sheetName === 'Timeline Archive') {
-      formatDateTimeColumn_(sheet, 1);   // DateTime column
-      formatDateTimeColumn_(sheet, 16);  // Last Updated column
+      formatDateTimeColumn_(sheet, 1);   // DateTime column (A)
       addMealTimingValidation_(sheet, 9);  // Meal Timing Category column (I)
-      addStatusValidation_(sheet, 14);   // Response Status column (N)
+      addStatusValidation_(sheet, 15);   // Response Status column (O)
     } else if (sheetName === 'Meal Pool' || sheetName === 'Meal Image+Info') {
       formatDateTimeColumn_(sheet, 3);  // Submission Time column
     } else if (sheetName === 'Workout Pool') {
@@ -1532,7 +1530,7 @@ function archiveOldEntries(ss) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - ARCHIVE_AFTER_DAYS);
 
-  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 24).getValues(); // 24 columns
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 21).getValues(); // 21 columns
   const toArchive = [];
   const rowsToDelete = [];
 
@@ -1546,9 +1544,8 @@ function archiveOldEntries(ss) {
 
   if (toArchive.length > 0) {
     const nextRow = archive.getLastRow() + 1;
-    archive.getRange(nextRow, 1, toArchive.length, 24).setValues(toArchive); // 24 columns
+    archive.getRange(nextRow, 1, toArchive.length, 21).setValues(toArchive); // 21 columns
     formatDateTimeColumn_(archive, 1);
-    formatDateTimeColumn_(archive, 16);
 
     // Delete from timeline in reverse order
     rowsToDelete.reverse().forEach(row => {
