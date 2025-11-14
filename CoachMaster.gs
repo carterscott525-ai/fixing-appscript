@@ -56,7 +56,7 @@ const OUTPUT_TABS = new Set([
 
 const TIMELINE_HEADERS = [
   'Submission Time', 'Client Email', 'Client Name', 'Type',
-  'Workout', 'Strength Score', 'Meal', 'Image',
+  'Strength Score', 'Image',
   'Minutes to Workout', 'Fuel Score', 'Recovery Score', 'Micronutrient Density Score',
   'Daily Micronutrient Coverage Score', 'Daily Ai Suggestion', 'Coach Response', 'Response Status',
   'Workout Notes', 'Week', 'Month', 'Submission ID'
@@ -1037,13 +1037,12 @@ function buildTimelineMaster(ss) {
       const ingredients = [coreIngredients, addedIngredients].filter(x => x).join(', ');
       const mealInfo = [mealName, ingredients, portions, cookingMethod].filter(x => x).join(' | ');
 
-      // Build row array with header mapping for new 20-column structure
+      // Build row array with header mapping for new 18-column structure
       const mealRow = new Array(TIMELINE_HEADERS.length).fill('');
       mealRow[findTimelineCol('Submission Time')] = submissionTime;
       mealRow[findTimelineCol('Client Email')] = email;
       mealRow[findTimelineCol('Client Name')] = clientName;
-      mealRow[findTimelineCol('Type')] = 'Meal';
-      mealRow[findTimelineCol('Meal')] = mealInfo;
+      mealRow[findTimelineCol('Type')] = mealInfo;  // Meal name/info in Type column
       mealRow[findTimelineCol('Image')] = imageUrl;
       mealRow[findTimelineCol('Response Status')] = 'Pending Review';
       mealRow[findTimelineCol('Week')] = week;
@@ -1073,13 +1072,12 @@ function buildTimelineMaster(ss) {
       const setsReps = workout.sets && workout.reps ? `${workout.sets}x${workout.reps}` : workout.reps;
       const workoutInfo = [workout.name, setsReps].filter(x => x).join(': ');
 
-      // Build row array with header mapping for new 20-column structure
+      // Build row array with header mapping for new 18-column structure
       const workoutRow = new Array(TIMELINE_HEADERS.length).fill('');
       workoutRow[findTimelineCol('Submission Time')] = dateTime;
       workoutRow[findTimelineCol('Client Email')] = email;
       workoutRow[findTimelineCol('Client Name')] = clientName;
-      workoutRow[findTimelineCol('Type')] = 'Workout';
-      workoutRow[findTimelineCol('Workout')] = workoutInfo;
+      workoutRow[findTimelineCol('Type')] = workoutInfo;  // Workout name/info in Type column
       workoutRow[findTimelineCol('Workout Notes')] = workout.notes;
       workoutRow[findTimelineCol('Response Status')] = 'Pending Review';
       workoutRow[findTimelineCol('Week')] = week;
@@ -1092,7 +1090,7 @@ function buildTimelineMaster(ss) {
 
   if (newEntries.length > 0) {
     const nextRow = timeline.getLastRow() + 1;
-    timeline.getRange(nextRow, 1, newEntries.length, 25).setValues(newEntries);
+    timeline.getRange(nextRow, 1, newEntries.length, TIMELINE_HEADERS.length).setValues(newEntries);
     formatDateTimeColumn_(timeline, 1);
     formatDateTimeColumn_(timeline, 17);
 
@@ -1472,7 +1470,7 @@ function reapplySheetFormatting_(sheet, sheetName) {
     // Reapply date/time formatting
     if (sheetName === 'Timeline Master' || sheetName === 'Timeline Archive') {
       formatDateTimeColumn_(sheet, 1);   // Submission Time column (A)
-      addStatusValidation_(sheet, 16);   // Response Status column (P)
+      addStatusValidation_(sheet, 14);   // Response Status column (N)
     } else if (sheetName === 'Meal Pool' || sheetName === 'Meal Image+Info') {
       formatDateTimeColumn_(sheet, 3);  // Submission Time column
     } else if (sheetName === 'Workout Pool') {
@@ -1744,8 +1742,7 @@ function parseAllWorkoutLogs() {
         timelineRow[findTimelineCol('Submission Time')] = date;
         timelineRow[findTimelineCol('Client Email')] = email;
         timelineRow[findTimelineCol('Client Name')] = clientName;
-        timelineRow[findTimelineCol('Type')] = 'Workout';
-        timelineRow[findTimelineCol('Workout')] = workoutSummary;
+        timelineRow[findTimelineCol('Type')] = workoutSummary;  // Workout name/summary in Type column
         timelineRow[findTimelineCol('Strength Score')] = safeWorkoutScore;
         timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
         timelineRow[findTimelineCol('Workout Notes')] = clientNotes;
@@ -1809,11 +1806,12 @@ function prepareMealsForAnalysis() {
 
   const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
   const dateCol = headers.indexOf('Submission Time');
-  const typeCol = headers.indexOf('Type');
   const emailCol = headers.indexOf('Client Email');
+  const strengthScoreCol = headers.indexOf('Strength Score');
+  const imageCol = headers.indexOf('Image');
   const minutesCol = headers.indexOf('Minutes to Workout');
 
-  if (dateCol === -1 || typeCol === -1 || emailCol === -1 || minutesCol === -1) {
+  if (dateCol === -1 || emailCol === -1 || strengthScoreCol === -1 || imageCol === -1 || minutesCol === -1) {
     Logger.log('ERROR: Required columns not found');
     SpreadsheetApp.getUi().alert('Error: Missing required columns in Timeline Master');
     return;
@@ -1821,18 +1819,21 @@ function prepareMealsForAnalysis() {
 
   const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, timeline.getLastColumn()).getValues();
 
-  // Separate meals and workouts
+  // Separate meals and workouts based on which columns have data
   const meals = [];
   const workouts = [];
 
   data.forEach((row, idx) => {
-    const type = String(row[typeCol]).trim();
     const dateTime = row[dateCol];
     const email = normalizeEmail_(row[emailCol]);
+    const hasStrengthScore = row[strengthScoreCol] && String(row[strengthScoreCol]).trim() !== '';
+    const hasImage = row[imageCol] && String(row[imageCol]).trim() !== '';
 
-    if (type === 'Meal' && dateTime instanceof Date) {
+    if (hasImage && dateTime instanceof Date) {
+      // Has image = meal row
       meals.push({ row: idx + 2, dateTime, email, currentMinutes: row[minutesCol] });
-    } else if (type === 'Workout' && dateTime instanceof Date) {
+    } else if (hasStrengthScore && dateTime instanceof Date) {
+      // Has strength score = workout row
       workouts.push({ dateTime, email });
     }
   });
@@ -2430,21 +2431,31 @@ function isDuplicateEntry_(timeline, dateTime, email, type) {
   const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
   const dateCol = headers.indexOf('Submission Time');
   const emailCol = headers.indexOf('Client Email');
-  const typeCol = headers.indexOf('Type');
+  const strengthScoreCol = headers.indexOf('Strength Score');
+  const imageCol = headers.indexOf('Image');
 
-  if (dateCol === -1 || emailCol === -1 || typeCol === -1) return false;
+  if (dateCol === -1 || emailCol === -1 || strengthScoreCol === -1 || imageCol === -1) return false;
 
   const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, timeline.getLastColumn()).getValues();
 
   for (let i = 0; i < data.length; i++) {
     const rowDate = data[i][dateCol];
     const rowEmail = normalizeEmail_(data[i][emailCol]);
-    const rowType = String(data[i][typeCol]).trim();
+    const hasStrengthScore = data[i][strengthScoreCol] && String(data[i][strengthScoreCol]).trim() !== '';
+    const hasImage = data[i][imageCol] && String(data[i][imageCol]).trim() !== '';
+
+    // Determine if this row matches the type we're checking for
+    let isMatchingType = false;
+    if (type === 'Workout' && hasStrengthScore) {
+      isMatchingType = true;
+    } else if (type === 'Meal' && hasImage) {
+      isMatchingType = true;
+    }
 
     // Compare datetime (within 1 minute tolerance), email, and type
-    if (rowDate instanceof Date && dateTime instanceof Date) {
+    if (rowDate instanceof Date && dateTime instanceof Date && isMatchingType) {
       const timeDiff = Math.abs(rowDate.getTime() - dateTime.getTime());
-      if (timeDiff < 60000 && rowEmail === normalizeEmail_(email) && rowType === type) {
+      if (timeDiff < 60000 && rowEmail === normalizeEmail_(email)) {
         return true;
       }
     }
