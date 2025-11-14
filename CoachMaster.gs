@@ -55,12 +55,11 @@ const OUTPUT_TABS = new Set([
 // ═══════════════════════════════════════════════════════════════════════
 
 const TIMELINE_HEADERS = [
-  'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
-  'Ingredients', 'Portions', 'Cooking Method',
-  'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Micronutrient Score',
-  'Minutes Between Meals and Exercise', 'Coach Response', 'Response Status',
-  'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Workout Score',
-  'Week'
+  'Submission Time', 'Client Email', 'Client Name', 'Type',
+  'Workout', 'Strength Score', 'Meal', 'Image',
+  'Minutes to Workout', 'Fuel Score', 'Recovery Score', 'Micronutrient Density Score',
+  'Daily Micronutrient Coverage Score', 'Daily Ai Suggestion', 'Coach Response', 'Response Status',
+  'Workout Notes', 'Week', 'Month', 'Submission ID'
 ];
 
 const MEAL_POOL_HEADERS = [
@@ -1036,35 +1035,22 @@ function buildTimelineMaster(ss) {
       const month = Utilities.formatDate(dateObj, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
       const ingredients = [coreIngredients, addedIngredients].filter(x => x).join(', ');
+      const mealInfo = [mealName, ingredients, portions, cookingMethod].filter(x => x).join(' | ');
 
-      // 25 columns total (added 8 new meal tracking columns after Cooking Method)
-      newEntries.push([
-        submissionTime,           // 1. DateTime
-        'Meal',                   // 2. Type
-        email,                    // 3. Client Email
-        clientName,               // 4. Client Name
-        imageUrl,                 // 5. Image URL
-        mealName,                 // 6. Details
-        ingredients,              // 7. Ingredients
-        portions,                 // 8. Portions
-        cookingMethod,            // 9. Cooking Method
-        '',                       // 10. Meal Timing Category (NEW)
-        '',                       // 11. Fuel Score (NEW)
-        '',                       // 12. Recovery Score (NEW)
-        '',                       // 13. Other Score (NEW)
-        '',                       // 14. Meal Notes (NEW)
-        '',                       // 15. Timing Minutes (NEW)
-        '',                       // 16. Meal Status (NEW)
-        '',                       // 17. Last Updated (NEW)
-        '',                       // 18. Exercises
-        '',                       // 19. Sets/Reps
-        '',                       // 20. Workout Notes
-        '',                       // 21. Coach Response
-        'Pending Review',         // 22. Response Status
-        week,                     // 23. Week
-        month,                    // 24. Month
-        submissionId              // 25. Submission ID
-      ]);
+      // Build row array with header mapping for new 20-column structure
+      const mealRow = new Array(TIMELINE_HEADERS.length).fill('');
+      mealRow[findTimelineCol('Submission Time')] = submissionTime;
+      mealRow[findTimelineCol('Client Email')] = email;
+      mealRow[findTimelineCol('Client Name')] = clientName;
+      mealRow[findTimelineCol('Type')] = 'Meal';
+      mealRow[findTimelineCol('Meal')] = mealInfo;
+      mealRow[findTimelineCol('Image')] = imageUrl;
+      mealRow[findTimelineCol('Response Status')] = 'Pending Review';
+      mealRow[findTimelineCol('Week')] = week;
+      mealRow[findTimelineCol('Month')] = month;
+      mealRow[findTimelineCol('Submission ID')] = submissionId;
+
+      newEntries.push(mealRow);
     });
   }
 
@@ -1085,35 +1071,22 @@ function buildTimelineMaster(ss) {
       const month = Utilities.formatDate(dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
       const setsReps = workout.sets && workout.reps ? `${workout.sets}x${workout.reps}` : workout.reps;
+      const workoutInfo = [workout.name, setsReps].filter(x => x).join(': ');
 
-      // 25 columns total
-      newEntries.push([
-        dateTime,                 // 1. DateTime
-        'Workout',                // 2. Type
-        email,                    // 3. Client Email
-        clientName,               // 4. Client Name
-        '',                       // 5. Image URL
-        workout.name,             // 6. Details
-        '',                       // 7. Ingredients
-        '',                       // 8. Portions
-        '',                       // 9. Cooking Method
-        '',                       // 10. Meal Timing Category
-        '',                       // 11. Fuel Score
-        '',                       // 12. Recovery Score
-        '',                       // 13. Other Score
-        '',                       // 14. Meal Notes
-        '',                       // 15. Timing Minutes
-        '',                       // 16. Meal Status
-        '',                       // 17. Last Updated
-        workout.name,             // 18. Exercises
-        setsReps,                 // 19. Sets/Reps
-        workout.notes,            // 20. Workout Notes
-        '',                       // 21. Coach Response
-        'Pending Review',         // 22. Response Status
-        week,                     // 23. Week
-        month,                    // 24. Month
-        submissionId              // 25. Submission ID
-      ]);
+      // Build row array with header mapping for new 20-column structure
+      const workoutRow = new Array(TIMELINE_HEADERS.length).fill('');
+      workoutRow[findTimelineCol('Submission Time')] = dateTime;
+      workoutRow[findTimelineCol('Client Email')] = email;
+      workoutRow[findTimelineCol('Client Name')] = clientName;
+      workoutRow[findTimelineCol('Type')] = 'Workout';
+      workoutRow[findTimelineCol('Workout')] = workoutInfo;
+      workoutRow[findTimelineCol('Workout Notes')] = workout.notes;
+      workoutRow[findTimelineCol('Response Status')] = 'Pending Review';
+      workoutRow[findTimelineCol('Week')] = week;
+      workoutRow[findTimelineCol('Month')] = month;
+      workoutRow[findTimelineCol('Submission ID')] = submissionId;
+
+      newEntries.push(workoutRow);
     });
   }
 
@@ -1498,9 +1471,8 @@ function reapplySheetFormatting_(sheet, sheetName) {
   try {
     // Reapply date/time formatting
     if (sheetName === 'Timeline Master' || sheetName === 'Timeline Archive') {
-      formatDateTimeColumn_(sheet, 1);   // DateTime column (A)
-      addMealTimingValidation_(sheet, 9);  // Meal Timing Category column (I)
-      addStatusValidation_(sheet, 15);   // Response Status column (O)
+      formatDateTimeColumn_(sheet, 1);   // Submission Time column (A)
+      addStatusValidation_(sheet, 16);   // Response Status column (P)
     } else if (sheetName === 'Meal Pool' || sheetName === 'Meal Image+Info') {
       formatDateTimeColumn_(sheet, 3);  // Submission Time column
     } else if (sheetName === 'Workout Pool') {
@@ -1769,19 +1741,16 @@ function parseAllWorkoutLogs() {
 
         // Build row array with header mapping (only populate essential columns)
         const timelineRow = new Array(timelineHeaders.length).fill('');
-        timelineRow[findTimelineCol('DateTime')] = date;
-        timelineRow[findTimelineCol('Type')] = 'Workout';
+        timelineRow[findTimelineCol('Submission Time')] = date;
         timelineRow[findTimelineCol('Client Email')] = email;
         timelineRow[findTimelineCol('Client Name')] = clientName;
-        timelineRow[findTimelineCol('Workout Sequence')] = sheet.getName();
-        timelineRow[findTimelineCol('Workout Notes')] = clientNotes; // Use client's actual notes
+        timelineRow[findTimelineCol('Type')] = 'Workout';
+        timelineRow[findTimelineCol('Workout')] = workoutSummary;
+        timelineRow[findTimelineCol('Strength Score')] = safeWorkoutScore;
         timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
+        timelineRow[findTimelineCol('Workout Notes')] = clientNotes;
         timelineRow[findTimelineCol('Week')] = week;
-
-        const workoutScoreIdx = findTimelineCol('Workout Score');
-        if (workoutScoreIdx >= 0) {
-          timelineRow[workoutScoreIdx] = safeWorkoutScore; // Write as validated number
-        }
+        timelineRow[findTimelineCol('Month')] = month;
 
         timeline.appendRow(timelineRow);
       }
@@ -1839,12 +1808,12 @@ function prepareMealsForAnalysis() {
   Logger.log('═══════════════════════════════════════════════════════════');
 
   const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
-  const dateCol = headers.indexOf('DateTime');
+  const dateCol = headers.indexOf('Submission Time');
   const typeCol = headers.indexOf('Type');
   const emailCol = headers.indexOf('Client Email');
-  const mealTimingCol = headers.indexOf('Meal Timing Category');
+  const minutesCol = headers.indexOf('Minutes to Workout');
 
-  if (dateCol === -1 || typeCol === -1 || emailCol === -1 || mealTimingCol === -1) {
+  if (dateCol === -1 || typeCol === -1 || emailCol === -1 || minutesCol === -1) {
     Logger.log('ERROR: Required columns not found');
     SpreadsheetApp.getUi().alert('Error: Missing required columns in Timeline Master');
     return;
@@ -1862,7 +1831,7 @@ function prepareMealsForAnalysis() {
     const email = normalizeEmail_(row[emailCol]);
 
     if (type === 'Meal' && dateTime instanceof Date) {
-      meals.push({ row: idx + 2, dateTime, email, currentTiming: row[mealTimingCol] });
+      meals.push({ row: idx + 2, dateTime, email, currentMinutes: row[minutesCol] });
     } else if (type === 'Workout' && dateTime instanceof Date) {
       workouts.push({ dateTime, email });
     }
@@ -1903,20 +1872,32 @@ function prepareMealsForAnalysis() {
       }
     });
 
-    // Determine meal timing category
-    let mealTiming = 'other';
+    // Calculate minutes to nearest workout
+    // Negative = before workout, Positive = after workout
+    let minutesToWorkout = '';
 
-    if (closestWorkoutAfter && minTimeAfter <= TWO_HOURS_MS) {
-      mealTiming = 'post-workout';
-    } else if (closestWorkoutBefore && minTimeBefore <= ONE_HOUR_MS) {
-      mealTiming = 'pre-workout';
+    if (closestWorkoutAfter !== null || closestWorkoutBefore !== null) {
+      let closestTime = Infinity;
+      let isAfter = false;
+
+      if (closestWorkoutAfter && minTimeAfter < closestTime) {
+        closestTime = minTimeAfter;
+        isAfter = true;
+      }
+      if (closestWorkoutBefore && minTimeBefore < closestTime) {
+        closestTime = minTimeBefore;
+        isAfter = false;
+      }
+
+      const minutes = Math.round(closestTime / (60 * 1000));
+      minutesToWorkout = isAfter ? minutes : -minutes;
     }
 
     // Update only if different from current value
-    if (mealTiming !== meal.currentTiming) {
-      timeline.getRange(meal.row, mealTimingCol + 1).setValue(mealTiming);
+    if (minutesToWorkout !== meal.currentMinutes) {
+      timeline.getRange(meal.row, minutesCol + 1).setValue(minutesToWorkout);
       mealsUpdated++;
-      Logger.log(`  Updated meal for ${meal.email} at ${meal.dateTime} → ${mealTiming}`);
+      Logger.log(`  Updated meal for ${meal.email} at ${meal.dateTime} → ${minutesToWorkout} min`);
     }
   });
 
@@ -1931,10 +1912,10 @@ function prepareMealsForAnalysis() {
     '✓ Meal Analysis Preparation Complete',
     `Analyzed ${meals.length} meal(s)\n` +
     `Updated ${mealsUpdated} meal timing(s)\n\n` +
-    `Meal Timing Categories:\n` +
-    `• pre-workout: within 1 hour before workout\n` +
-    `• post-workout: within 2 hours after workout\n` +
-    `• other: all other meals\n\n` +
+    `Minutes to Workout:\n` +
+    `• Negative values = meal before workout\n` +
+    `• Positive values = meal after workout\n` +
+    `• Empty = no nearby workouts\n\n` +
     `Ready for future Claude API scoring!`,
     SpreadsheetApp.getUi().ButtonSet.OK
   );
@@ -2447,7 +2428,7 @@ function isDuplicateEntry_(timeline, dateTime, email, type) {
   if (!timeline || timeline.getLastRow() <= 1) return false;
 
   const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
-  const dateCol = headers.indexOf('DateTime');
+  const dateCol = headers.indexOf('Submission Time');
   const emailCol = headers.indexOf('Client Email');
   const typeCol = headers.indexOf('Type');
 
