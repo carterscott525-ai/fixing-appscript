@@ -59,7 +59,7 @@ const TIMELINE_HEADERS = [
   'Ingredients', 'Portions', 'Cooking Method',
   'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Micronutrient Score',
   'Timing Minutes', 'Coach Response', 'Response Status',
-  'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Gym Score',
+  'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Workout Score',
   'Week'
 ];
 
@@ -101,7 +101,7 @@ const PARSED_WORKOUTS_HEADERS = [
 ];
 
 const GYM_SCORE_HEADERS = [
-  'Date', 'Email', 'Client BW', 'Total Sets', 'Gym Score', 'Formula'
+  'Date', 'Email', 'Client BW', 'Total Sets', 'Workout Score', 'Formula'
 ];
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1733,21 +1733,21 @@ function parseAllWorkoutLogs() {
         });
       }
 
-      // Calculate Gym Score as average 1RM (not normalized)
+      // Calculate Workout Score as average normalized (1RM/BW)
       const validSets = allSets.filter(s => {
-        const oneRM = Number(s.oneRM);
-        return !isNaN(oneRM) && isFinite(oneRM) && oneRM > 0;
+        const normalized = Number(s.normalized);
+        return !isNaN(normalized) && isFinite(normalized) && normalized > 0;
       });
 
-      const gymScore = validSets.length > 0 ?
-        validSets.reduce((sum, s) => Number(sum) + Number(s.oneRM), 0) / validSets.length : 0;
+      const workoutScore = validSets.length > 0 ?
+        validSets.reduce((sum, s) => Number(sum) + Number(s.normalized), 0) / validSets.length : 0;
 
-      // Validate final gymScore
-      const safeGymScore = (!isNaN(gymScore) && isFinite(gymScore)) ? Number(gymScore.toFixed(2)) : 0;
+      // Validate final workoutScore
+      const safeWorkoutScore = (!isNaN(workoutScore) && isFinite(workoutScore)) ? Number(workoutScore.toFixed(2)) : 0;
 
       scoreSheet.appendRow([
         date, email, bodyweight, validSets.length,
-        safeGymScore, 'Σ(1RM)/N'
+        safeWorkoutScore, 'Σ(1RM/BW)/N'
       ]);
 
       // Add to Timeline Master - write only essential columns
@@ -1777,11 +1777,10 @@ function parseAllWorkoutLogs() {
         timelineRow[findTimelineCol('Workout Notes')] = clientNotes; // Use client's actual notes
         timelineRow[findTimelineCol('Response Status')] = 'Pending Review';
         timelineRow[findTimelineCol('Week')] = week;
-        timelineRow[findTimelineCol('Month')] = month;
 
-        const gymScoreIdx = findTimelineCol('Gym Score');
-        if (gymScoreIdx >= 0) {
-          timelineRow[gymScoreIdx] = safeGymScore; // Write as validated number
+        const workoutScoreIdx = findTimelineCol('Workout Score');
+        if (workoutScoreIdx >= 0) {
+          timelineRow[workoutScoreIdx] = safeWorkoutScore; // Write as validated number
         }
 
         timeline.appendRow(timelineRow);
@@ -2611,7 +2610,7 @@ function diagLocaleAndFormats() {
 
 /**
  * Diagnostic 3: Verify Timeline Master column mapping
- * Confirms Gym Score and other columns are correctly targeted
+ * Confirms Workout Score and other columns are correctly targeted
  */
 function diagTimelineMappingAndLastRows() {
   console.log('═══ DIAGNOSTIC 3: Timeline Mapping ═══');
@@ -2641,7 +2640,7 @@ function diagTimelineMappingAndLastRows() {
   };
 
   const dateTimeCol = findCol('datetime');
-  const gymScoreCol = findCol('gym score');
+  const workoutScoreCol = findCol('workout score');
   const emailCol = findCol('client email');
   const ingredientsCol = findCol('ingredients');
   const cookingMethodCol = findCol('cooking method');
@@ -2650,7 +2649,7 @@ function diagTimelineMappingAndLastRows() {
 
   console.log('\n🎯 Key Column Indices:');
   console.log(`  DateTime: ${dateTimeCol >= 0 ? `[${dateTimeCol}] ✓` : '❌ NOT FOUND'}`);
-  console.log(`  Gym Score: ${gymScoreCol >= 0 ? `[${gymScoreCol}] ✓` : '❌ NOT FOUND'}`);
+  console.log(`  Workout Score: ${workoutScoreCol >= 0 ? `[${workoutScoreCol}] ✓` : '❌ NOT FOUND'}`);
   console.log(`  Client Email: ${emailCol >= 0 ? `[${emailCol}] ✓` : '❌ NOT FOUND'}`);
   console.log(`  Ingredients: ${ingredientsCol >= 0 ? `[${ingredientsCol}]` : '(not found)'}`);
   console.log(`  Cooking Method: ${cookingMethodCol >= 0 ? `[${cookingMethodCol}]` : '(not found)'}`);
@@ -2673,7 +2672,7 @@ function diagTimelineMappingAndLastRows() {
     console.log(`\n  Row ${startRow + idx}:`);
     console.log(`    DateTime: ${dateTimeCol >= 0 ? row[dateTimeCol] : 'N/A'}`);
     console.log(`    Client Email: ${emailCol >= 0 ? row[emailCol] : 'N/A'}`);
-    console.log(`    Gym Score: ${gymScoreCol >= 0 ? row[gymScoreCol] : 'N/A'}`);
+    console.log(`    Workout Score: ${workoutScoreCol >= 0 ? row[workoutScoreCol] : 'N/A'}`);
 
     // Find narrative (first non-empty from Ingredients, Cooking Method, Workout Notes)
     let narrative = '';
