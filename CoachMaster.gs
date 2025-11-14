@@ -56,7 +56,7 @@ const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
   'Fuel Score', 'Recovery Score', 'Other Score',
-  'Meal Notes', 'Timing Minutes', 'Meal Status', 'Last Updated',
+  'Meal Notes', 'Meal Status', 'Last Updated',
   'Workout Start Time', 'Exercises', 'Sets/Reps', 'Workout Notes',
   'Coach Response', 'Response Status', 'Week', 'Month', 'Submission ID'
 ];
@@ -124,10 +124,10 @@ function setupCoachMaster() {
 
   // Create Timeline Master with new meal tracking columns
   let timeline = getOrCreateSheet_(ss, 'Timeline Master', TIMELINE_HEADERS, '#1976D2');
-  addStatusValidation_(timeline, 22); // Response Status column
+  addStatusValidation_(timeline, 21); // Response Status column
   formatDateTimeColumn_(timeline, 1); // DateTime column
-  formatDateTimeColumn_(timeline, 16); // Last Updated column
-  formatDateTimeColumn_(timeline, 17); // Workout Start Time column
+  formatDateTimeColumn_(timeline, 15); // Last Updated column
+  formatDateTimeColumn_(timeline, 16); // Workout Start Time column
   Logger.log(`✓ Timeline Master ready`);
 
   // Create Meal Pool
@@ -1034,7 +1034,7 @@ function buildTimelineMaster(ss) {
 
       const ingredients = [coreIngredients, addedIngredients].filter(x => x).join(', ');
 
-      // 25 columns total (removed Meal Timing Category, added Workout Start Time)
+      // 24 columns total (removed Meal Timing Category and Timing Minutes, added Workout Start Time)
       newEntries.push([
         submissionTime,           // 0. DateTime
         'Meal',                   // 1. Type
@@ -1049,18 +1049,17 @@ function buildTimelineMaster(ss) {
         '',                       // 10. Recovery Score
         '',                       // 11. Other Score
         '',                       // 12. Meal Notes
-        '',                       // 13. Timing Minutes
-        '',                       // 14. Meal Status
-        '',                       // 15. Last Updated
-        '',                       // 16. Workout Start Time (empty for meals)
-        '',                       // 17. Exercises
-        '',                       // 18. Sets/Reps
-        '',                       // 19. Workout Notes
-        '',                       // 20. Coach Response
-        'Pending Review',         // 21. Response Status
-        week,                     // 22. Week
-        month,                    // 23. Month
-        submissionId              // 24. Submission ID
+        '',                       // 13. Meal Status
+        '',                       // 14. Last Updated
+        '',                       // 15. Workout Start Time (empty for meals)
+        '',                       // 16. Exercises
+        '',                       // 17. Sets/Reps
+        '',                       // 18. Workout Notes
+        '',                       // 19. Coach Response
+        'Pending Review',         // 20. Response Status
+        week,                     // 21. Week
+        month,                    // 22. Month
+        submissionId              // 23. Submission ID
       ]);
     });
   }
@@ -1084,7 +1083,7 @@ function buildTimelineMaster(ss) {
       const setsReps = workout.sets && workout.reps ? `${workout.sets}x${workout.reps}` : workout.reps;
       const workoutStartTime = workout.workoutStartTime || '';
 
-      // 25 columns total
+      // 24 columns total
       newEntries.push([
         dateTime,                 // 0. DateTime
         'Workout',                // 1. Type
@@ -1099,32 +1098,31 @@ function buildTimelineMaster(ss) {
         '',                       // 10. Recovery Score
         '',                       // 11. Other Score
         '',                       // 12. Meal Notes
-        '',                       // 13. Timing Minutes
-        '',                       // 14. Meal Status
-        '',                       // 15. Last Updated
-        workoutStartTime,         // 16. Workout Start Time
-        workout.name,             // 17. Exercises
-        setsReps,                 // 18. Sets/Reps
-        workout.notes,            // 19. Workout Notes
-        '',                       // 20. Coach Response
-        'Pending Review',         // 21. Response Status
-        week,                     // 22. Week
-        month,                    // 23. Month
-        submissionId              // 24. Submission ID
+        '',                       // 13. Meal Status
+        '',                       // 14. Last Updated
+        workoutStartTime,         // 15. Workout Start Time
+        workout.name,             // 16. Exercises
+        setsReps,                 // 17. Sets/Reps
+        workout.notes,            // 18. Workout Notes
+        '',                       // 19. Coach Response
+        'Pending Review',         // 20. Response Status
+        week,                     // 21. Week
+        month,                    // 22. Month
+        submissionId              // 23. Submission ID
       ]);
     });
   }
 
   if (newEntries.length > 0) {
     const nextRow = timeline.getLastRow() + 1;
-    timeline.getRange(nextRow, 1, newEntries.length, 25).setValues(newEntries);
+    timeline.getRange(nextRow, 1, newEntries.length, 24).setValues(newEntries);
     formatDateTimeColumn_(timeline, 1);   // DateTime
-    formatDateTimeColumn_(timeline, 16);  // Last Updated
-    formatDateTimeColumn_(timeline, 17);  // Workout Start Time
+    formatDateTimeColumn_(timeline, 15);  // Last Updated
+    formatDateTimeColumn_(timeline, 16);  // Workout Start Time
 
     // Sort by DateTime desc
     if (timeline.getLastRow() > 2) {
-      timeline.getRange(2, 1, timeline.getLastRow() - 1, 25)
+      timeline.getRange(2, 1, timeline.getLastRow() - 1, 24)
         .sort({ column: 1, ascending: false });
     }
 
@@ -1145,11 +1143,11 @@ function sendPendingResponses(ss) {
 
   // Send Timeline responses
   if (timeline && timeline.getLastRow() > 1) {
-    const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 22).getValues();
+    const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 21).getValues();
 
     for (let i = 0; i < data.length; i++) {
-      const response = String(data[i][20] || '').trim(); // Coach Response column (was 12, now 20)
-      const status = String(data[i][21] || '').trim();   // Response Status column (was 13, now 21)
+      const response = String(data[i][19] || '').trim(); // Coach Response column
+      const status = String(data[i][20] || '').trim();   // Response Status column
 
       if (response && status === 'Ready to Send') {
         const email = String(data[i][2] || '').trim();
@@ -1160,7 +1158,7 @@ function sendPendingResponses(ss) {
         const sent = sendResponseEmail_(email, type, details, dateTime, response);
 
         if (sent) {
-          timeline.getRange(i + 2, 22).setValue('Sent'); // Response Status column
+          timeline.getRange(i + 2, 21).setValue('Sent'); // Response Status column
           emailsSent++;
         }
       }
@@ -1255,8 +1253,8 @@ function markReadyToSend() {
   }
 
   // Determine which columns to check based on sheet
-  const statusCol = sheetName === 'Timeline Master' ? 22 : 5; // Response Status was 14, now 22
-  const responseCol = sheetName === 'Timeline Master' ? 21 : 4; // Coach Response was 13, now 21
+  const statusCol = sheetName === 'Timeline Master' ? 21 : 5; // Response Status column
+  const responseCol = sheetName === 'Timeline Master' ? 20 : 4; // Coach Response column
 
   // Get selection details
   const startRow = range.getRow();
@@ -1331,7 +1329,7 @@ function archiveOldEntries(ss) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - ARCHIVE_AFTER_DAYS);
 
-  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 25).getValues(); // 25 columns now
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 24).getValues(); // 24 columns now
   const toArchive = [];
   const rowsToDelete = [];
 
@@ -1345,10 +1343,10 @@ function archiveOldEntries(ss) {
 
   if (toArchive.length > 0) {
     const nextRow = archive.getLastRow() + 1;
-    archive.getRange(nextRow, 1, toArchive.length, 25).setValues(toArchive); // 25 columns
+    archive.getRange(nextRow, 1, toArchive.length, 24).setValues(toArchive); // 24 columns
     formatDateTimeColumn_(archive, 1);   // DateTime
-    formatDateTimeColumn_(archive, 16);  // Last Updated
-    formatDateTimeColumn_(archive, 17);  // Workout Start Time
+    formatDateTimeColumn_(archive, 15);  // Last Updated
+    formatDateTimeColumn_(archive, 16);  // Workout Start Time
 
     // Delete from timeline in reverse order
     rowsToDelete.reverse().forEach(row => {
