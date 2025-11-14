@@ -55,7 +55,7 @@ const OUTPUT_TABS = new Set([
 // ═══════════════════════════════════════════════════════════════════════
 
 const TIMELINE_HEADERS = [
-  'Submission Time', 'Client Email', 'Client Name', 'Type',
+  'Submission Date', 'Client Email', 'Client Name', 'Type',
   'Strength Score', 'Image',
   'Minutes to Workout', 'Fuel Score', 'Recovery Score', 'Micronutrient Density Score',
   'Daily Micronutrient Coverage Score', 'Daily Ai Suggestion', 'Coach Response', 'Response Status',
@@ -63,44 +63,44 @@ const TIMELINE_HEADERS = [
 ];
 
 const MEAL_POOL_HEADERS = [
-  'Client Email', 'Image URL', 'Submission Time', 'Meal Name',
+  'Submission Date', 'Client Email', 'Image URL', 'Meal Name',
   'Core Ingredients', 'Added Ingredients', 'Cooking Method',
   'Portions', 'Submission ID'
 ];
 
 const MEAL_IMAGE_INFO_HEADERS = [
-  'Client Email', 'Image URL', 'Submission Time', 'Meal Name',
+  'Submission Date', 'Client Email', 'Image URL', 'Meal Name',
   'Core Ingredients', 'Added Ingredients', 'Cooking Method',
   'Portions', 'Submission ID'
 ];
 
 const QUESTIONS_HEADERS = [
-  'Client Email', 'Submission Time', 'Question',
+  'Submission Date', 'Client Email', 'Question',
   'Coach Response', 'Status', 'Submission ID'
 ];
 
 const CLIENT_DETAILS_HEADERS = [
-  'Client Email', 'Client Name', 'Age', 'Gender', 'Height (cm)', 'Weight (kg)',
+  'Submission Date', 'Client Email', 'Client Name', 'Age', 'Gender', 'Height (cm)', 'Weight (kg)',
   'BMI', 'Phone Number', 'Medical Conditions', 'Allergies/Intolerances',
   'Current Injuries/Limitations', 'Medications', 'Sleep Quality (hrs/night)',
   'Stress Level', 'Training Experience', 'Fitness Goal', 'Activity Level',
   'Preferred Training Style', 'Dietary Restrictions', 'Food Preferences',
   'Foods to Avoid', 'Protein Target (g/day)', 'Carb Target (g/day)',
   'Fat Target (g/day)', 'Calorie Target', 'Additional Micronutrient Consideration',
-  'Emergency Contact', 'Notes/Other', 'Start Date', 'Last Updated'
+  'Emergency Contact', 'Notes/Other', 'Last Updated'
 ];
 
 const WORKOUT_POOL_HEADERS = [
-  'Client Email', 'Submission Time', 'Exercise', 'Sets', 'Reps',
+  'Submission Date', 'Client Email', 'Exercise', 'Sets', 'Reps',
   'Weight', 'Bodyweight', 'Notes', 'Submission ID'
 ];
 
 const PARSED_WORKOUTS_HEADERS = [
-  'Date', 'Email', 'Workout Sequence', 'Exercise', 'Set', 'Reps', 'Weight', '1RM', 'Normalized'
+  'Submission Date', 'Client Email', 'Workout Sequence', 'Exercise', 'Set', 'Reps', 'Weight', '1RM', 'Normalized'
 ];
 
 const GYM_SCORE_HEADERS = [
-  'Date', 'Email', 'Client BW', 'Total Sets', 'Workout Score', 'Formula'
+  'Submission Date', 'Client Email', 'Client BW', 'Total Sets', 'Workout Score', 'Formula'
 ];
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -108,7 +108,7 @@ const GYM_SCORE_HEADERS = [
 // ═══════════════════════════════════════════════════════════════════════
 
 const EMAIL_LABELS = ['client email', 'email', 'email address', 'e-mail'];
-const TIMESTAMP_LABELS = ['submission time', 'submitted time', 'timestamp', 'submitted at', 'date time', 'datetime', 'date', 'time'];
+const TIMESTAMP_LABELS = ['submission date', 'submission time', 'submitted time', 'timestamp', 'submitted at', 'date time', 'datetime', 'date', 'time'];
 const MEAL_NAME_LABELS = ['meal name', 'meal', 'name', 'meal_name'];
 const CORE_LABELS = ['core ingredients', 'ingredients', 'main ingredients', 'ingredient list'];
 const ADDED_LABELS = ['added ingredients', 'additional ingredients', 'extra ingredients'];
@@ -132,30 +132,28 @@ function setupCoachMaster() {
 
   // Create Timeline Master with new meal tracking columns
   let timeline = getOrCreateSheet_(ss, 'Timeline Master', TIMELINE_HEADERS, '#1976D2');
-  addStatusValidation_(timeline, 22); // Response Status column (was 14, now 22)
-  formatDateTimeColumn_(timeline, 1); // DateTime column
-  formatDateTimeColumn_(timeline, 17); // Last Updated column
+  addStatusValidation_(timeline, 14); // Response Status column (N) - only dropdown in entire spreadsheet
+  formatDateTimeColumn_(timeline, 1); // Submission Date column (A)
   Logger.log(`✓ Timeline Master ready`);
 
   // Create Meal Pool
   let mealPool = getOrCreateSheet_(ss, 'Meal Pool', MEAL_POOL_HEADERS, '#4CAF50');
-  formatDateTimeColumn_(mealPool, 3); // Submission Time column
+  formatDateTimeColumn_(mealPool, 1); // Submission Date column (A)
   Logger.log(`✓ Meal Pool ready`);
 
   // Create Meal Image+Info (staging)
   let mealImageInfo = getOrCreateSheet_(ss, 'Meal Image+Info', MEAL_IMAGE_INFO_HEADERS, '#4CAF50');
-  formatDateTimeColumn_(mealImageInfo, 3); // Submission Time column
+  formatDateTimeColumn_(mealImageInfo, 1); // Submission Date column (A)
   Logger.log(`✓ Meal Image+Info ready`);
 
   // Create Workout Pool
   let workoutPool = getOrCreateSheet_(ss, 'Workout Pool', WORKOUT_POOL_HEADERS, '#FF9800');
-  formatDateTimeColumn_(workoutPool, 2); // Submission Time column
+  formatDateTimeColumn_(workoutPool, 1); // Submission Date column (A)
   Logger.log(`✓ Workout Pool ready`);
 
   // Create Questions tab
   let questions = getOrCreateSheet_(ss, 'General Questions and Feedback', QUESTIONS_HEADERS, '#9C27B0');
-  addStatusValidation_(questions, 5); // Status column
-  formatDateTimeColumn_(questions, 2); // Submission Time column
+  formatDateTimeColumn_(questions, 1); // Submission Date column
   Logger.log(`✓ General Questions and Feedback ready`);
 
   // Create Client Details
@@ -392,15 +390,15 @@ function ingestMealSource_(ss, sourceSheet, headers) {
     if (existingMeals.has(key)) return;
 
     newMeals.push([
-      email,
-      '', // Image URL (will be filled by meal sync)
-      submissionTime,
-      mealName,
-      core,
-      added,
-      method,
-      portions,
-      submissionId
+      submissionTime,  // Submission Date (A)
+      email,           // Client Email (B)
+      '',              // Image URL (C) - will be filled by meal sync
+      mealName,        // Meal Name (D)
+      core,            // Core Ingredients (E)
+      added,           // Added Ingredients (F)
+      method,          // Cooking Method (G)
+      portions,        // Portions (H)
+      submissionId     // Submission ID (I)
     ]);
   });
 
@@ -809,24 +807,24 @@ function mirrorFromDestinationToMealPool(ss) {
   if (mealPool.getLastRow() > 1) {
     const existing = mealPool.getRange(2, 1, mealPool.getLastRow() - 1, 4).getValues();
     existing.forEach(row => {
-      const key = `${row[0]}_${row[2]}_${row[3]}`; // Email_SubmissionTime_MealName
+      const key = `${row[1]}_${row[0]}_${row[3]}`; // Email_SubmissionDate_MealName
       existingMeals.add(key);
     });
   }
 
-  // Read from Meal Image+Info
+  // Read from Meal Image+Info (Submission Date, Client Email, Image URL, Meal Name, ...)
   const data = mealImageInfo.getRange(2, 1, mealImageInfo.getLastRow() - 1, 9).getValues();
   const newMeals = [];
 
   data.forEach(row => {
-    const email = row[0];
-    const imageUrl = row[1];
-    const submissionTime = row[2];
+    const submissionDate = row[0];
+    const email = row[1];
+    const imageUrl = row[2];
     const mealName = row[3];
 
     if (!email || !mealName) return; // Skip incomplete rows
 
-    const key = `${email}_${submissionTime}_${mealName}`;
+    const key = `${email}_${submissionDate}_${mealName}`;
     if (existingMeals.has(key)) return;
 
     newMeals.push(row); // All 9 columns
@@ -835,7 +833,7 @@ function mirrorFromDestinationToMealPool(ss) {
   if (newMeals.length > 0) {
     const nextRow = mealPool.getLastRow() + 1;
     mealPool.getRange(nextRow, 1, newMeals.length, 9).setValues(newMeals);
-    formatDateTimeColumn_(mealPool, 3);
+    formatDateTimeColumn_(mealPool, 1); // Submission Date column (A)
   }
 
   return newMeals.length;
@@ -1016,9 +1014,9 @@ function buildTimelineMaster(ss) {
     const meals = mealPool.getRange(2, 1, mealPool.getLastRow() - 1, 9).getValues();
 
     meals.forEach(meal => {
-      const email = normalizeEmail_(meal[0]);
-      const imageUrl = meal[1] || '';
-      const submissionTime = meal[2] || '';
+      const submissionDate = meal[0] || '';
+      const email = normalizeEmail_(meal[1]);
+      const imageUrl = meal[2] || '';
       const mealName = meal[3] || '';
       let coreIngredients = meal[4] || '';
       let addedIngredients = meal[5] || '';
@@ -1026,7 +1024,7 @@ function buildTimelineMaster(ss) {
       let portions = meal[7] || '';
       const submissionId = String(meal[8] || '').trim();
 
-      const key = submissionId ? `${submissionTime}_${email}_${submissionId}` : `${submissionTime}_${email}`;
+      const key = submissionId ? `${submissionDate}_${email}_${submissionId}` : `${submissionDate}_${email}`;
       if (existing.has(key)) return;
 
       // If details are missing, look up most recent complete entry for this meal name + client
@@ -1035,8 +1033,8 @@ function buildTimelineMaster(ss) {
 
         // Search Meal Pool for previous complete entries
         for (let i = meals.length - 1; i >= 0; i--) {
-          const prevEmail = normalizeEmail_(meals[i][0]);
-          const prevTime = meals[i][2];
+          const prevDate = meals[i][0];
+          const prevEmail = normalizeEmail_(meals[i][1]);
           const prevName = meals[i][3] || '';
           const prevCore = meals[i][4] || '';
           const prevAdded = meals[i][5] || '';
@@ -1047,20 +1045,20 @@ function buildTimelineMaster(ss) {
           if (prevEmail === email &&
               prevName.toLowerCase() === mealName.toLowerCase() &&
               (prevCore || prevAdded || prevMethod || prevPortions) &&
-              prevTime < submissionTime) {
+              prevDate < submissionDate) {
 
             coreIngredients = prevCore;
             addedIngredients = prevAdded;
             cookingMethod = prevMethod;
             portions = prevPortions;
-            Logger.log(`  ✓ Found previous entry from ${prevTime}`);
+            Logger.log(`  ✓ Found previous entry from ${prevDate}`);
             break;
           }
         }
       }
 
       const clientName = clientNames.get(email) || '';
-      const dateObj = parseDate_(submissionTime);
+      const dateObj = parseDate_(submissionDate);
       const week = getWeekNumber_(dateObj);
       const month = Utilities.formatDate(dateObj, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
@@ -1069,7 +1067,7 @@ function buildTimelineMaster(ss) {
 
       // Build row array with header mapping for new 18-column structure
       const mealRow = new Array(TIMELINE_HEADERS.length).fill('');
-      mealRow[findTimelineCol('Submission Time')] = submissionTime;
+      mealRow[findTimelineCol('Submission Date')] = submissionDate;
       mealRow[findTimelineCol('Client Email')] = email;
       mealRow[findTimelineCol('Client Name')] = clientName;
       mealRow[findTimelineCol('Type')] = mealInfo;  // Meal name/info in Type column
@@ -1104,7 +1102,7 @@ function buildTimelineMaster(ss) {
 
       // Build row array with header mapping for new 18-column structure
       const workoutRow = new Array(TIMELINE_HEADERS.length).fill('');
-      workoutRow[findTimelineCol('Submission Time')] = dateTime;
+      workoutRow[findTimelineCol('Submission Date')] = dateTime;
       workoutRow[findTimelineCol('Client Email')] = email;
       workoutRow[findTimelineCol('Client Name')] = clientName;
       workoutRow[findTimelineCol('Type')] = workoutInfo;  // Workout name/info in Type column
@@ -1508,15 +1506,16 @@ function reapplySheetFormatting_(sheet, sheetName) {
   try {
     // Reapply date/time formatting
     if (sheetName === 'Timeline Master' || sheetName === 'Timeline Archive') {
-      formatDateTimeColumn_(sheet, 1);   // Submission Time column (A)
-      addStatusValidation_(sheet, 14);   // Response Status column (N)
+      formatDateTimeColumn_(sheet, 1);   // Submission Date column (A)
+      addStatusValidation_(sheet, 14);   // Response Status column (N) - only dropdown in entire spreadsheet
     } else if (sheetName === 'Meal Pool' || sheetName === 'Meal Image+Info') {
-      formatDateTimeColumn_(sheet, 3);  // Submission Time column
+      formatDateTimeColumn_(sheet, 1);  // Submission Date column
     } else if (sheetName === 'Workout Pool') {
-      formatDateTimeColumn_(sheet, 2);  // Submission Time column
+      formatDateTimeColumn_(sheet, 1);  // Submission Date column
     } else if (sheetName === 'General Questions and Feedback') {
-      formatDateTimeColumn_(sheet, 2);  // Submission Time column
-      addStatusValidation_(sheet, 5);   // Status column
+      formatDateTimeColumn_(sheet, 1);  // Submission Date column
+    } else if (sheetName === 'ParsedWorkouts' || sheetName === 'GymScore') {
+      formatDateTimeColumn_(sheet, 1);  // Submission Date column
     }
 
     Logger.log(`    → Formatting reapplied to ${sheetName}`);
@@ -1778,7 +1777,7 @@ function parseAllWorkoutLogs() {
 
         // Build row array with header mapping (only populate essential columns)
         const timelineRow = new Array(timelineHeaders.length).fill('');
-        timelineRow[findTimelineCol('Submission Time')] = date;
+        timelineRow[findTimelineCol('Submission Date')] = date;
         timelineRow[findTimelineCol('Client Email')] = email;
         timelineRow[findTimelineCol('Client Name')] = clientName;
         timelineRow[findTimelineCol('Type')] = workoutSummary;  // Workout name/summary in Type column
@@ -1844,7 +1843,7 @@ function prepareMealsForAnalysis() {
   Logger.log('═══════════════════════════════════════════════════════════');
 
   const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
-  const dateCol = headers.indexOf('Submission Time');
+  const dateCol = headers.indexOf('Submission Date');
   const emailCol = headers.indexOf('Client Email');
   const strengthScoreCol = headers.indexOf('Strength Score');
   const imageCol = headers.indexOf('Image');
@@ -2468,7 +2467,7 @@ function isDuplicateEntry_(timeline, dateTime, email, type) {
   if (!timeline || timeline.getLastRow() <= 1) return false;
 
   const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
-  const dateCol = headers.indexOf('Submission Time');
+  const dateCol = headers.indexOf('Submission Date');
   const emailCol = headers.indexOf('Client Email');
   const strengthScoreCol = headers.indexOf('Strength Score');
   const imageCol = headers.indexOf('Image');
