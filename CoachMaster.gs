@@ -58,7 +58,7 @@ const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Ingredients', 'Portions', 'Cooking Method',
   'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Micronutrient Score',
-  'Timing Minutes', 'Coach Response', 'Response Status',
+  'Minutes Between Meals and Exercise', 'Coach Response', 'Response Status',
   'Exercises', 'Workout Sequence', 'Sets/Reps', 'Workout Notes', 'Workout Score',
   'Week'
 ];
