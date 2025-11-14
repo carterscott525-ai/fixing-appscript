@@ -218,7 +218,6 @@ function onOpen() {
     .addItem('Run Meal Image Match Now', 'runMealSync')
     .addItem('Parse All Workout Logs', 'parseAllWorkoutLogs')
     .addItem('Prepare Meals For Analysis', 'prepareMealsForAnalysis')
-    .addItem('🔍 Debug Workout Log Structure', 'debugParseStructure')
     .addSeparator()
     .addItem('Clear All Logged Data (Create Template)', 'clearAllLoggedData')
     .addToUi();
