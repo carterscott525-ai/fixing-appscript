@@ -55,9 +55,9 @@ const OUTPUT_TABS = new Set([
 const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
-  'Meal Timing Category', 'Fuel Score', 'Recovery Score', 'Other Score',
+  'Fuel Score', 'Recovery Score', 'Other Score',
   'Meal Notes', 'Timing Minutes', 'Meal Status', 'Last Updated',
-  'Exercises', 'Sets/Reps', 'Workout Notes',
+  'Workout Start Time', 'Exercises', 'Sets/Reps', 'Workout Notes',
   'Coach Response', 'Response Status', 'Week', 'Month', 'Submission ID'
 ];
 
@@ -90,7 +90,7 @@ const CLIENT_DETAILS_HEADERS = [
 ];
 
 const WORKOUT_POOL_HEADERS = [
-  'Submission Time', 'Client Email', 'Exercise', 'Sets', 'Reps',
+  'Submission Time', 'Workout Start Time', 'Client Email', 'Exercise', 'Sets', 'Reps',
   'Weight', 'Bodyweight', 'Notes', 'Submission ID'
 ];
 
@@ -109,6 +109,7 @@ const QUESTION_LABELS = ['question', 'message', 'text'];
 const SUBMISSION_ID_LABELS = ['submission id', 'response id', 'id'];
 const DATE_LABELS = ['submission date', 'date', 'submitted date'];
 const TIME_LABELS = ['time', 'submission time', 'submitted time'];
+const WORKOUT_START_LABELS = ['workout start time', 'start time', 'workout started', 'started at'];
 
 // ═══════════════════════════════════════════════════════════════════════
 // SETUP FUNCTION - RUN THIS FIRST
@@ -123,9 +124,10 @@ function setupCoachMaster() {
 
   // Create Timeline Master with new meal tracking columns
   let timeline = getOrCreateSheet_(ss, 'Timeline Master', TIMELINE_HEADERS, '#1976D2');
-  addStatusValidation_(timeline, 22); // Response Status column (was 14, now 22)
+  addStatusValidation_(timeline, 22); // Response Status column
   formatDateTimeColumn_(timeline, 1); // DateTime column
-  formatDateTimeColumn_(timeline, 17); // Last Updated column
+  formatDateTimeColumn_(timeline, 16); // Last Updated column
+  formatDateTimeColumn_(timeline, 17); // Workout Start Time column
   Logger.log(`✓ Timeline Master ready`);
 
   // Create Meal Pool
@@ -141,6 +143,7 @@ function setupCoachMaster() {
   // Create Workout Pool
   let workoutPool = getOrCreateSheet_(ss, 'Workout Pool', WORKOUT_POOL_HEADERS, '#FF9800');
   formatDateTimeColumn_(workoutPool, 1); // Submission Time column (now column A)
+  formatDateTimeColumn_(workoutPool, 2); // Workout Start Time column (column B)
   Logger.log(`✓ Workout Pool ready`);
 
   // Create Questions tab
@@ -842,6 +845,7 @@ function parseWorkoutsDynamic_(workoutSheet) {
 
   const emailCol = findColumn_(headers, EMAIL_LABELS);
   const timestampCol = findColumn_(headers, TIMESTAMP_LABELS);
+  const workoutStartCol = findColumn_(headers, WORKOUT_START_LABELS);
   const bodyweightCol = findColumn_(headers, ['bodyweight', 'body weight', 'weight']);
   const notesCol = findColumn_(headers, ['notes', 'note', 'comments']);
   const idCol = findColumn_(headers, SUBMISSION_ID_LABELS);
@@ -860,6 +864,7 @@ function parseWorkoutsDynamic_(workoutSheet) {
   values.forEach(row => {
     const email = normalizeEmail_(row[emailCol]);
     const timeValue = row[timestampCol];
+    const workoutStartValue = workoutStartCol !== -1 ? row[workoutStartCol] : null;
     const bodyweight = bodyweightCol !== -1 ? String(row[bodyweightCol] || '').trim() : '';
     const notes = notesCol !== -1 ? String(row[notesCol] || '').trim() : '';
     const submissionId = idCol !== -1 ? String(row[idCol] || '').trim() : '';
@@ -869,6 +874,9 @@ function parseWorkoutsDynamic_(workoutSheet) {
     const dateTime = parseTimestamp(timeValue, spreadsheetTZ);
     if (!dateTime) return;
 
+    // Parse workout start time (may be null if column doesn't exist)
+    const workoutStartTime = workoutStartValue ? parseTimestamp(workoutStartValue, spreadsheetTZ) : null;
+
     // Detect exercise columns
     const exercises = detectExercises_(headers, row, exerciseDict);
 
@@ -876,6 +884,7 @@ function parseWorkoutsDynamic_(workoutSheet) {
       results.push({
         email: email,
         dateTime: dateTime,
+        workoutStartTime: workoutStartTime,
         name: ex.name,
         sets: ex.sets,
         reps: ex.reps,
@@ -1025,33 +1034,33 @@ function buildTimelineMaster(ss) {
 
       const ingredients = [coreIngredients, addedIngredients].filter(x => x).join(', ');
 
-      // 25 columns total (added 8 new meal tracking columns after Cooking Method)
+      // 25 columns total (removed Meal Timing Category, added Workout Start Time)
       newEntries.push([
-        submissionTime,           // 1. DateTime
-        'Meal',                   // 2. Type
-        email,                    // 3. Client Email
-        clientName,               // 4. Client Name
-        imageUrl,                 // 5. Image URL
-        mealName,                 // 6. Details
-        ingredients,              // 7. Ingredients
-        portions,                 // 8. Portions
-        cookingMethod,            // 9. Cooking Method
-        '',                       // 10. Meal Timing Category (NEW)
-        '',                       // 11. Fuel Score (NEW)
-        '',                       // 12. Recovery Score (NEW)
-        '',                       // 13. Other Score (NEW)
-        '',                       // 14. Meal Notes (NEW)
-        '',                       // 15. Timing Minutes (NEW)
-        '',                       // 16. Meal Status (NEW)
-        '',                       // 17. Last Updated (NEW)
-        '',                       // 18. Exercises
-        '',                       // 19. Sets/Reps
-        '',                       // 20. Workout Notes
-        '',                       // 21. Coach Response
-        'Pending Review',         // 22. Response Status
-        week,                     // 23. Week
-        month,                    // 24. Month
-        submissionId              // 25. Submission ID
+        submissionTime,           // 0. DateTime
+        'Meal',                   // 1. Type
+        email,                    // 2. Client Email
+        clientName,               // 3. Client Name
+        imageUrl,                 // 4. Image URL
+        mealName,                 // 5. Details
+        ingredients,              // 6. Ingredients
+        portions,                 // 7. Portions
+        cookingMethod,            // 8. Cooking Method
+        '',                       // 9. Fuel Score
+        '',                       // 10. Recovery Score
+        '',                       // 11. Other Score
+        '',                       // 12. Meal Notes
+        '',                       // 13. Timing Minutes
+        '',                       // 14. Meal Status
+        '',                       // 15. Last Updated
+        '',                       // 16. Workout Start Time (empty for meals)
+        '',                       // 17. Exercises
+        '',                       // 18. Sets/Reps
+        '',                       // 19. Workout Notes
+        '',                       // 20. Coach Response
+        'Pending Review',         // 21. Response Status
+        week,                     // 22. Week
+        month,                    // 23. Month
+        submissionId              // 24. Submission ID
       ]);
     });
   }
@@ -1073,34 +1082,35 @@ function buildTimelineMaster(ss) {
       const month = Utilities.formatDate(dateTime, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
 
       const setsReps = workout.sets && workout.reps ? `${workout.sets}x${workout.reps}` : workout.reps;
+      const workoutStartTime = workout.workoutStartTime || '';
 
       // 25 columns total
       newEntries.push([
-        dateTime,                 // 1. DateTime
-        'Workout',                // 2. Type
-        email,                    // 3. Client Email
-        clientName,               // 4. Client Name
-        '',                       // 5. Image URL
-        workout.name,             // 6. Details
-        '',                       // 7. Ingredients
-        '',                       // 8. Portions
-        '',                       // 9. Cooking Method
-        '',                       // 10. Meal Timing Category
-        '',                       // 11. Fuel Score
-        '',                       // 12. Recovery Score
-        '',                       // 13. Other Score
-        '',                       // 14. Meal Notes
-        '',                       // 15. Timing Minutes
-        '',                       // 16. Meal Status
-        '',                       // 17. Last Updated
-        workout.name,             // 18. Exercises
-        setsReps,                 // 19. Sets/Reps
-        workout.notes,            // 20. Workout Notes
-        '',                       // 21. Coach Response
-        'Pending Review',         // 22. Response Status
-        week,                     // 23. Week
-        month,                    // 24. Month
-        submissionId              // 25. Submission ID
+        dateTime,                 // 0. DateTime
+        'Workout',                // 1. Type
+        email,                    // 2. Client Email
+        clientName,               // 3. Client Name
+        '',                       // 4. Image URL
+        workout.name,             // 5. Details
+        '',                       // 6. Ingredients
+        '',                       // 7. Portions
+        '',                       // 8. Cooking Method
+        '',                       // 9. Fuel Score
+        '',                       // 10. Recovery Score
+        '',                       // 11. Other Score
+        '',                       // 12. Meal Notes
+        '',                       // 13. Timing Minutes
+        '',                       // 14. Meal Status
+        '',                       // 15. Last Updated
+        workoutStartTime,         // 16. Workout Start Time
+        workout.name,             // 17. Exercises
+        setsReps,                 // 18. Sets/Reps
+        workout.notes,            // 19. Workout Notes
+        '',                       // 20. Coach Response
+        'Pending Review',         // 21. Response Status
+        week,                     // 22. Week
+        month,                    // 23. Month
+        submissionId              // 24. Submission ID
       ]);
     });
   }
@@ -1108,8 +1118,9 @@ function buildTimelineMaster(ss) {
   if (newEntries.length > 0) {
     const nextRow = timeline.getLastRow() + 1;
     timeline.getRange(nextRow, 1, newEntries.length, 25).setValues(newEntries);
-    formatDateTimeColumn_(timeline, 1);
-    formatDateTimeColumn_(timeline, 17);
+    formatDateTimeColumn_(timeline, 1);   // DateTime
+    formatDateTimeColumn_(timeline, 16);  // Last Updated
+    formatDateTimeColumn_(timeline, 17);  // Workout Start Time
 
     // Sort by DateTime desc
     if (timeline.getLastRow() > 2) {
@@ -1335,8 +1346,9 @@ function archiveOldEntries(ss) {
   if (toArchive.length > 0) {
     const nextRow = archive.getLastRow() + 1;
     archive.getRange(nextRow, 1, toArchive.length, 25).setValues(toArchive); // 25 columns
-    formatDateTimeColumn_(archive, 1);
-    formatDateTimeColumn_(archive, 17);
+    formatDateTimeColumn_(archive, 1);   // DateTime
+    formatDateTimeColumn_(archive, 16);  // Last Updated
+    formatDateTimeColumn_(archive, 17);  // Workout Start Time
 
     // Delete from timeline in reverse order
     rowsToDelete.reverse().forEach(row => {
