@@ -1020,14 +1020,44 @@ function buildTimelineMaster(ss) {
       const imageUrl = meal[1] || '';
       const submissionTime = meal[2] || '';
       const mealName = meal[3] || '';
-      const coreIngredients = meal[4] || '';
-      const addedIngredients = meal[5] || '';
-      const cookingMethod = meal[6] || '';
-      const portions = meal[7] || '';
+      let coreIngredients = meal[4] || '';
+      let addedIngredients = meal[5] || '';
+      let cookingMethod = meal[6] || '';
+      let portions = meal[7] || '';
       const submissionId = String(meal[8] || '').trim();
 
       const key = submissionId ? `${submissionTime}_${email}_${submissionId}` : `${submissionTime}_${email}`;
       if (existing.has(key)) return;
+
+      // If details are missing, look up most recent complete entry for this meal name + client
+      if (mealName && (!coreIngredients && !addedIngredients && !cookingMethod && !portions)) {
+        Logger.log(`  Looking up previous details for "${mealName}" (${email})...`);
+
+        // Search Meal Pool for previous complete entries
+        for (let i = meals.length - 1; i >= 0; i--) {
+          const prevEmail = normalizeEmail_(meals[i][0]);
+          const prevTime = meals[i][2];
+          const prevName = meals[i][3] || '';
+          const prevCore = meals[i][4] || '';
+          const prevAdded = meals[i][5] || '';
+          const prevMethod = meals[i][6] || '';
+          const prevPortions = meals[i][7] || '';
+
+          // Match: same client, same meal name, has details, is earlier than current submission
+          if (prevEmail === email &&
+              prevName.toLowerCase() === mealName.toLowerCase() &&
+              (prevCore || prevAdded || prevMethod || prevPortions) &&
+              prevTime < submissionTime) {
+
+            coreIngredients = prevCore;
+            addedIngredients = prevAdded;
+            cookingMethod = prevMethod;
+            portions = prevPortions;
+            Logger.log(`  ✓ Found previous entry from ${prevTime}`);
+            break;
+          }
+        }
+      }
 
       const clientName = clientNames.get(email) || '';
       const dateObj = parseDate_(submissionTime);
