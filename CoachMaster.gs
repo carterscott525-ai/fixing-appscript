@@ -218,6 +218,7 @@ function onOpen() {
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
     .addItem('Parse All Workout Logs', 'parseAllWorkoutLogs')
+    .addItem('Prepare Meals For Analysis', 'prepareMealsForAnalysis')
     .addItem('🔍 Debug Workout Log Structure', 'debugParseStructure')
     .addSeparator()
     .addItem('Clear All Logged Data (Create Template)', 'clearAllLoggedData')
@@ -1755,6 +1756,13 @@ function parseAllWorkoutLogs() {
 
       // Add to Timeline Master - write only essential columns
       if (timeline && exerciseDetails.length > 0) {
+        // Check for duplicates before adding
+        if (isDuplicateEntry_(timeline, date, email, 'Workout')) {
+          Logger.log(`  ⚠️ Skipping duplicate workout: ${email} at ${date}`);
+          totalRowsParsed++;
+          return;
+        }
+
         const clientDetails = ss.getSheetByName('Client Details');
         const clientName = getClientNames_(clientDetails).get(email) || '';
         const dateObj = parseDate_(date);
@@ -1807,6 +1815,132 @@ function parseAllWorkoutLogs() {
     `• Timeline Master\n` +
     `• ParsedWorkouts\n` +
     `• GymScore`,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PREPARE MEALS FOR ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Prepares meals for future Claude API analysis by calculating meal timing
+ * based on workout proximity:
+ * - pre-workout: within 1 hour before workout start
+ * - post-workout: within 2 hours after workout end
+ * - other: all other meals
+ */
+function prepareMealsForAnalysis() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const timeline = ss.getSheetByName('Timeline Master');
+
+  if (!timeline || timeline.getLastRow() <= 1) {
+    SpreadsheetApp.getUi().alert('No data in Timeline Master');
+    return;
+  }
+
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('PREPARE MEALS FOR ANALYSIS STARTED');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
+  const dateCol = headers.indexOf('DateTime');
+  const typeCol = headers.indexOf('Type');
+  const emailCol = headers.indexOf('Client Email');
+  const mealTimingCol = headers.indexOf('Meal Timing Category');
+
+  if (dateCol === -1 || typeCol === -1 || emailCol === -1 || mealTimingCol === -1) {
+    Logger.log('ERROR: Required columns not found');
+    SpreadsheetApp.getUi().alert('Error: Missing required columns in Timeline Master');
+    return;
+  }
+
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, timeline.getLastColumn()).getValues();
+
+  // Separate meals and workouts
+  const meals = [];
+  const workouts = [];
+
+  data.forEach((row, idx) => {
+    const type = String(row[typeCol]).trim();
+    const dateTime = row[dateCol];
+    const email = normalizeEmail_(row[emailCol]);
+
+    if (type === 'Meal' && dateTime instanceof Date) {
+      meals.push({ row: idx + 2, dateTime, email, currentTiming: row[mealTimingCol] });
+    } else if (type === 'Workout' && dateTime instanceof Date) {
+      workouts.push({ dateTime, email });
+    }
+  });
+
+  Logger.log(`Found ${meals.length} meals and ${workouts.length} workouts`);
+
+  let mealsUpdated = 0;
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+  // For each meal, find closest workout and calculate timing
+  meals.forEach(meal => {
+    let closestWorkoutBefore = null;
+    let closestWorkoutAfter = null;
+    let minTimeBefore = Infinity;
+    let minTimeAfter = Infinity;
+
+    // Find closest workouts before and after for this client
+    workouts.forEach(workout => {
+      if (workout.email !== meal.email) return;
+
+      const timeDiff = meal.dateTime.getTime() - workout.dateTime.getTime();
+
+      if (timeDiff > 0) {
+        // Meal is after workout
+        if (timeDiff < minTimeAfter) {
+          minTimeAfter = timeDiff;
+          closestWorkoutAfter = workout;
+        }
+      } else if (timeDiff < 0) {
+        // Meal is before workout
+        const absTimeDiff = Math.abs(timeDiff);
+        if (absTimeDiff < minTimeBefore) {
+          minTimeBefore = absTimeDiff;
+          closestWorkoutBefore = workout;
+        }
+      }
+    });
+
+    // Determine meal timing category
+    let mealTiming = 'other';
+
+    if (closestWorkoutAfter && minTimeAfter <= TWO_HOURS_MS) {
+      mealTiming = 'post-workout';
+    } else if (closestWorkoutBefore && minTimeBefore <= ONE_HOUR_MS) {
+      mealTiming = 'pre-workout';
+    }
+
+    // Update only if different from current value
+    if (mealTiming !== meal.currentTiming) {
+      timeline.getRange(meal.row, mealTimingCol + 1).setValue(mealTiming);
+      mealsUpdated++;
+      Logger.log(`  Updated meal for ${meal.email} at ${meal.dateTime} → ${mealTiming}`);
+    }
+  });
+
+  Logger.log('');
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log(`PREPARE MEALS FOR ANALYSIS COMPLETE`);
+  Logger.log(`  Meals analyzed: ${meals.length}`);
+  Logger.log(`  Meals updated: ${mealsUpdated}`);
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  SpreadsheetApp.getUi().alert(
+    '✓ Meal Analysis Preparation Complete',
+    `Analyzed ${meals.length} meal(s)\n` +
+    `Updated ${mealsUpdated} meal timing(s)\n\n` +
+    `Meal Timing Categories:\n` +
+    `• pre-workout: within 1 hour before workout\n` +
+    `• post-workout: within 2 hours after workout\n` +
+    `• other: all other meals\n\n` +
+    `Ready for future Claude API scoring!`,
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
@@ -2304,6 +2438,43 @@ function getClientNames_(clientDetails) {
   });
 
   return map;
+}
+
+/**
+ * Checks if an entry already exists in Timeline Master
+ * @param {Sheet} timeline - Timeline Master sheet
+ * @param {Date} dateTime - Entry datetime
+ * @param {string} email - Client email
+ * @param {string} type - Entry type (Workout/Meal)
+ * @returns {boolean} - True if duplicate exists
+ */
+function isDuplicateEntry_(timeline, dateTime, email, type) {
+  if (!timeline || timeline.getLastRow() <= 1) return false;
+
+  const headers = timeline.getRange(1, 1, 1, timeline.getLastColumn()).getValues()[0];
+  const dateCol = headers.indexOf('DateTime');
+  const emailCol = headers.indexOf('Client Email');
+  const typeCol = headers.indexOf('Type');
+
+  if (dateCol === -1 || emailCol === -1 || typeCol === -1) return false;
+
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, timeline.getLastColumn()).getValues();
+
+  for (let i = 0; i < data.length; i++) {
+    const rowDate = data[i][dateCol];
+    const rowEmail = normalizeEmail_(data[i][emailCol]);
+    const rowType = String(data[i][typeCol]).trim();
+
+    // Compare datetime (within 1 minute tolerance), email, and type
+    if (rowDate instanceof Date && dateTime instanceof Date) {
+      const timeDiff = Math.abs(rowDate.getTime() - dateTime.getTime());
+      if (timeDiff < 60000 && rowEmail === normalizeEmail_(email) && rowType === type) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function parseDate_(dateStr) {
