@@ -58,7 +58,7 @@ const TIMELINE_HEADERS = [
   'DateTime', 'Type', 'Client Email', 'Client Name', 'Image URL',
   'Details', 'Ingredients', 'Portions', 'Cooking Method',
   'Fuel Score', 'Recovery Score', 'Other Score',
-  'Meal Notes', 'Meal Status', 'Last Updated',
+  'Meal Notes', 'Meal-Workout Timing', 'Last Updated',
   'Workout Start Time', 'Exercises', 'Sets/Reps', 'Workout Notes',
   'Coach Response', 'Response Status', 'Week', 'Month', 'Submission ID'
 ];
@@ -220,6 +220,7 @@ function onOpen() {
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
     .addItem('Parse All Workout Logs', 'parseAllWorkoutLogs')
+    .addItem('Prepare Meals for Analysis', 'prepareMealsForAnalysis')
     .addSeparator()
     .addItem('Clear All Logged Data (Create Template)', 'clearAllLoggedData')
     .addToUi();
@@ -1060,7 +1061,7 @@ function buildTimelineMaster(ss) {
         '',                       // 10. Recovery Score
         '',                       // 11. Other Score
         '',                       // 12. Meal Notes
-        '',                       // 13. Meal Status
+        '',                       // 13. Meal-Workout Timing (populated by prepareMealsForAnalysis)
         '',                       // 14. Last Updated
         '',                       // 15. Workout Start Time (empty for meals)
         '',                       // 16. Exercises
@@ -1109,7 +1110,7 @@ function buildTimelineMaster(ss) {
         '',                       // 10. Recovery Score
         '',                       // 11. Other Score
         '',                       // 12. Meal Notes
-        '',                       // 13. Meal Status
+        '',                       // 13. Meal-Workout Timing (not used for workouts)
         '',                       // 14. Last Updated
         workoutStartTime,         // 15. Workout Start Time
         workout.name,             // 16. Exercises
@@ -1558,6 +1559,152 @@ function archiveOldEntries(ss) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// PREPARE MEALS FOR ANALYSIS - CALCULATE MEAL-WORKOUT TIMING
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Calculates the time difference between each meal and the nearest workout
+ * for the same client. Populates the "Meal-Workout Timing" column.
+ *
+ * - Negative values = pre-workout meals (minutes before workout)
+ * - Positive values = post-workout meals (minutes after workout)
+ * - Matches meals to workouts using Workout Start Time when available,
+ *   otherwise uses workout submission DateTime
+ */
+function prepareMealsForAnalysis() {
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('PREPARE MEALS FOR ANALYSIS - STARTED');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const timeline = ss.getSheetByName('Timeline Master');
+
+  if (!timeline || timeline.getLastRow() <= 1) {
+    SpreadsheetApp.getUi().alert('Timeline Master is empty. Nothing to analyze.');
+    Logger.log('Timeline Master is empty');
+    return;
+  }
+
+  // Read all timeline data (24 columns)
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 24).getValues();
+
+  // Column indices (0-based)
+  const COL_DATETIME = 0;
+  const COL_TYPE = 1;
+  const COL_CLIENT_EMAIL = 2;
+  const COL_MEAL_WORKOUT_TIMING = 13;
+  const COL_WORKOUT_START_TIME = 15;
+
+  // Build index of workouts by client
+  const workoutsByClient = new Map();
+
+  data.forEach((row, idx) => {
+    const type = String(row[COL_TYPE] || '').trim();
+    const email = String(row[COL_CLIENT_EMAIL] || '').trim().toLowerCase();
+
+    if (type === 'Workout' && email) {
+      if (!workoutsByClient.has(email)) {
+        workoutsByClient.set(email, []);
+      }
+
+      // Use Workout Start Time if available, otherwise use DateTime
+      const workoutTime = row[COL_WORKOUT_START_TIME] || row[COL_DATETIME];
+
+      if (workoutTime instanceof Date && !isNaN(workoutTime.getTime())) {
+        workoutsByClient.get(email).push({
+          time: workoutTime,
+          rowIndex: idx
+        });
+      }
+    }
+  });
+
+  // Sort workouts by time for each client
+  workoutsByClient.forEach(workouts => {
+    workouts.sort((a, b) => a.time.getTime() - b.time.getTime());
+  });
+
+  Logger.log(`Found workouts for ${workoutsByClient.size} client(s)`);
+
+  // Calculate meal-workout timing for each meal
+  let mealsProcessed = 0;
+  const updates = [];
+
+  data.forEach((row, idx) => {
+    const type = String(row[COL_TYPE] || '').trim();
+    const email = String(row[COL_CLIENT_EMAIL] || '').trim().toLowerCase();
+    const mealTime = row[COL_DATETIME];
+
+    // Only process meals with valid timestamps
+    if (type === 'Meal' && email && mealTime instanceof Date && !isNaN(mealTime.getTime())) {
+      const clientWorkouts = workoutsByClient.get(email);
+
+      if (!clientWorkouts || clientWorkouts.length === 0) {
+        // No workouts for this client, leave timing blank
+        updates.push({
+          row: idx + 2,  // +2 because: +1 for header, +1 for 0-based index
+          value: ''
+        });
+      } else {
+        // Find nearest workout
+        let nearestWorkout = null;
+        let minDiff = Infinity;
+
+        clientWorkouts.forEach(workout => {
+          const diff = Math.abs(mealTime.getTime() - workout.time.getTime());
+          if (diff < minDiff) {
+            minDiff = diff;
+            nearestWorkout = workout;
+          }
+        });
+
+        if (nearestWorkout) {
+          // Calculate timing in minutes
+          // Negative = pre-workout (meal before workout)
+          // Positive = post-workout (meal after workout)
+          const timingMinutes = Math.round((mealTime.getTime() - nearestWorkout.time.getTime()) / 60000);
+
+          updates.push({
+            row: idx + 2,
+            value: timingMinutes
+          });
+
+          mealsProcessed++;
+        }
+      }
+    } else if (type === 'Workout') {
+      // Clear timing for workout rows
+      updates.push({
+        row: idx + 2,
+        value: ''
+      });
+    }
+  });
+
+  // Apply updates in batch
+  if (updates.length > 0) {
+    updates.forEach(update => {
+      timeline.getRange(update.row, COL_MEAL_WORKOUT_TIMING + 1).setValue(update.value);
+    });
+  }
+
+  Logger.log(`Processed ${mealsProcessed} meal(s) with workout timing`);
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('PREPARE MEALS FOR ANALYSIS - COMPLETE');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  SpreadsheetApp.getUi().alert(
+    '✓ Meal Analysis Complete',
+    `Calculated meal-workout timing for ${mealsProcessed} meal(s)\n\n` +
+    `Timing values:\n` +
+    `• Negative = pre-workout (minutes before)\n` +
+    `• Positive = post-workout (minutes after)\n\n` +
+    `Check the "Meal-Workout Timing" column in Timeline Master.`,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // WORKOUT LOG PARSING - GROUPED COLUMN FORMAT
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1739,7 +1886,7 @@ function parseAllWorkoutLogs() {
           '',                       // Recovery Score
           '',                       // Other Score
           '',                       // Meal Notes
-          '',                       // Meal Status
+          '',                       // Meal-Workout Timing (not used for workouts)
           '',                       // Last Updated
           '',                       // Workout Start Time
           workoutSummary,           // Exercises
