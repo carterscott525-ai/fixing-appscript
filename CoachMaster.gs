@@ -154,6 +154,7 @@ function setupCoachMaster() {
   // Create Questions tab
   let questions = getOrCreateSheet_(ss, 'General Questions and Feedback', QUESTIONS_HEADERS, '#9C27B0');
   formatDateTimeColumn_(questions, 1); // Submission Date column
+  addStatusValidation_(questions, 5); // Status column (E)
   Logger.log(`✓ General Questions and Feedback ready`);
 
   // Create Client Details
@@ -1507,13 +1508,14 @@ function reapplySheetFormatting_(sheet, sheetName) {
     // Reapply date/time formatting
     if (sheetName === 'Timeline Master' || sheetName === 'Timeline Archive') {
       formatDateTimeColumn_(sheet, 1);   // Submission Date column (A)
-      addStatusValidation_(sheet, 14);   // Response Status column (N) - only dropdown in entire spreadsheet
+      addStatusValidation_(sheet, 14);   // Response Status column (N)
     } else if (sheetName === 'Meal Pool' || sheetName === 'Meal Image+Info') {
       formatDateTimeColumn_(sheet, 1);  // Submission Date column
     } else if (sheetName === 'Workout Pool') {
       formatDateTimeColumn_(sheet, 1);  // Submission Date column
     } else if (sheetName === 'General Questions and Feedback') {
       formatDateTimeColumn_(sheet, 1);  // Submission Date column
+      addStatusValidation_(sheet, 5);   // Status column (E)
     } else if (sheetName === 'ParsedWorkouts' || sheetName === 'GymScore') {
       formatDateTimeColumn_(sheet, 1);  // Submission Date column
     }
