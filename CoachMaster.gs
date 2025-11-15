@@ -1213,6 +1213,7 @@ function calculateStrengthScores() {
     const sets = row[3]; // Sets
     const reps = row[4]; // Reps
     const weight = row[5]; // Weight
+    const bodyweight = row[6]; // Bodyweight
     const submissionId = String(row[8] || '').trim(); // Submission ID
 
     // Create unique key for workout
@@ -1232,7 +1233,8 @@ function calculateStrengthScores() {
       exercise: exercise,
       sets: sets,
       reps: reps,
-      weight: weight
+      weight: weight,
+      bodyweight: bodyweight
     });
   });
 
@@ -1243,12 +1245,40 @@ function calculateStrengthScores() {
     const epleyScores = [];
 
     workout.exercises.forEach(ex => {
-      const reps = parseFloat(ex.reps);
-      const weight = parseFloat(ex.weight);
+      // Parse reps - handle comma-separated values (e.g., "10,8,6")
+      const repsStr = String(ex.reps || '').trim();
+      const repsArray = repsStr.split(',').map(r => parseFloat(r.trim())).filter(r => !isNaN(r) && r > 0);
 
-      // Epley Formula: 1RM = weight × (1 + reps/30)
-      if (!isNaN(reps) && !isNaN(weight) && reps > 0 && weight > 0) {
-        const epley1RM = weight * (1 + reps / 30);
+      // Parse weight - handle comma-separated values (e.g., "135,185,225")
+      const weightStr = String(ex.weight || '').trim();
+      const weightArray = weightStr.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w) && w > 0);
+
+      // Get bodyweight for calisthenics
+      const bodyweight = parseFloat(ex.bodyweight);
+      const hasBodyweight = !isNaN(bodyweight) && bodyweight > 0;
+
+      // If we have reps but no weights, use bodyweight (calisthenics)
+      if (repsArray.length > 0 && weightArray.length === 0 && hasBodyweight) {
+        // Use bodyweight for all sets
+        repsArray.forEach(reps => {
+          const epley1RM = bodyweight * (1 + reps / 30);
+          epleyScores.push(epley1RM);
+        });
+      }
+      // If we have both reps and weights
+      else if (repsArray.length > 0 && weightArray.length > 0) {
+        // Match reps with weights (pair them up)
+        const numSets = Math.min(repsArray.length, weightArray.length);
+        for (let i = 0; i < numSets; i++) {
+          const reps = repsArray[i];
+          const weight = weightArray[i];
+          const epley1RM = weight * (1 + reps / 30);
+          epleyScores.push(epley1RM);
+        }
+      }
+      // If only one rep/weight value (single set)
+      else if (repsArray.length === 1 && weightArray.length === 1) {
+        const epley1RM = weightArray[0] * (1 + repsArray[0] / 30);
         epleyScores.push(epley1RM);
       }
     });
