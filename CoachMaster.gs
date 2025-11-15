@@ -206,6 +206,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
+    .addItem('Calculate Minutes to Workout', 'calculateMinutesToWorkout')
     .addToUi();
 }
 
@@ -230,13 +231,18 @@ function runCoachMasterSync() {
   Logger.log('\n[STEP 2] Building Timeline Master...');
   buildTimelineMaster(ss);
 
-  // Step 3: Send responses
-  Logger.log('\n[STEP 3] Sending pending responses...');
+  // Step 3: Calculate Minutes to Workout
+  Logger.log('\n[STEP 3] Calculating Minutes to Workout...');
+  const mealsCalculated = calculateMinutesToWorkout();
+  Logger.log(`  Meals calculated: ${mealsCalculated}`);
+
+  // Step 4: Send responses
+  Logger.log('\n[STEP 4] Sending pending responses...');
   const emailsSent = sendPendingResponses(ss);
   Logger.log(`  Emails sent: ${emailsSent}`);
 
-  // Step 4: Archive old entries
-  Logger.log('\n[STEP 4] Archiving old entries...');
+  // Step 5: Archive old entries
+  Logger.log('\n[STEP 5] Archiving old entries...');
   const archived = archiveOldEntries(ss);
   Logger.log(`  Entries archived: ${archived}`);
 
@@ -1167,6 +1173,123 @@ function buildTimelineMaster(ss) {
   } else {
     Logger.log(`  No new entries to add`);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALCULATE MINUTES TO WORKOUT
+// ═══════════════════════════════════════════════════════════════════════
+
+function calculateMinutesToWorkout() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const timeline = ss.getSheetByName('Timeline Master');
+
+  if (!timeline || timeline.getLastRow() <= 1) {
+    Logger.log('No data in Timeline Master');
+    return 0;
+  }
+
+  // Read all Timeline Master data
+  const data = timeline.getRange(2, 1, timeline.getLastRow() - 1, 19).getValues();
+
+  // Build workout index by client email
+  const workoutsByClient = new Map();
+
+  data.forEach((row, index) => {
+    const type = String(row[3] || '').trim(); // Type (column D, index 3)
+    if (type === 'Workout') {
+      const email = String(row[1] || '').trim(); // Client Email (column B, index 1)
+      const startTime = row[4]; // Start Time (column E, index 4)
+      const submissionDate = row[0]; // Submission Date (column A, index 0)
+
+      // Use Start Time if available, otherwise use Submission Date
+      const workoutTime = startTime || submissionDate;
+
+      if (!workoutsByClient.has(email)) {
+        workoutsByClient.set(email, []);
+      }
+
+      workoutsByClient.get(email).push({
+        time: workoutTime,
+        rowIndex: index
+      });
+    }
+  });
+
+  // Process meals and calculate Minutes to Workout
+  let updatedCount = 0;
+  const updates = [];
+
+  data.forEach((row, index) => {
+    const type = String(row[3] || '').trim(); // Type (column D, index 3)
+
+    if (type === 'Meal') {
+      const email = String(row[1] || '').trim(); // Client Email (column B, index 1)
+      const mealTime = row[0]; // Submission Date (column A, index 0)
+
+      // Find nearest workout for this client
+      const clientWorkouts = workoutsByClient.get(email);
+
+      if (!clientWorkouts || clientWorkouts.length === 0 || !mealTime) {
+        // No workouts found or no meal time - set to NULL
+        updates.push({
+          row: index + 2, // +2 because sheet rows are 1-indexed and we skipped header
+          value: 'NULL'
+        });
+      } else {
+        // Find nearest workout
+        let nearestWorkout = null;
+        let minTimeDiff = Infinity;
+
+        clientWorkouts.forEach(workout => {
+          if (!workout.time) return;
+
+          const mealDate = parseDate_(mealTime);
+          const workoutDate = parseDate_(workout.time);
+
+          if (!mealDate || !workoutDate) return;
+
+          const timeDiff = workoutDate.getTime() - mealDate.getTime();
+          const absTimeDiff = Math.abs(timeDiff);
+
+          if (absTimeDiff < Math.abs(minTimeDiff)) {
+            minTimeDiff = timeDiff;
+            nearestWorkout = workout;
+          }
+        });
+
+        if (nearestWorkout === null) {
+          // Couldn't find valid workout
+          updates.push({
+            row: index + 2,
+            value: 'NULL'
+          });
+        } else {
+          // Calculate minutes
+          // Positive if meal is BEFORE workout (pre-workout)
+          // Negative if meal is AFTER workout (post-workout)
+          const minutes = Math.round(minTimeDiff / (1000 * 60));
+
+          updates.push({
+            row: index + 2,
+            value: minutes
+          });
+          updatedCount++;
+        }
+      }
+    }
+  });
+
+  // Batch update the Minutes to Workout column (H, column 8)
+  if (updates.length > 0) {
+    updates.forEach(update => {
+      timeline.getRange(update.row, 8).setValue(update.value);
+    });
+  }
+
+  Logger.log(`Updated ${updatedCount} meal entries with Minutes to Workout`);
+  Logger.log(`Set ${updates.length - updatedCount} entries to NULL`);
+
+  return updatedCount;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
