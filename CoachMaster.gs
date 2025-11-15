@@ -1015,6 +1015,7 @@ function buildTimelineMaster(ss) {
 
       const key = submissionId ? `${submissionTime}_${email}_${submissionId}` : `${submissionTime}_${email}`;
       if (existing.has(key)) return;
+      existing.add(key);  // Prevent duplicates within the same batch
 
       const clientName = clientNames.get(email) || '';
       const dateObj = parseDate_(submissionTime);
@@ -1065,6 +1066,7 @@ function buildTimelineMaster(ss) {
 
       const key = submissionId ? `${dateTime}_${email}_${submissionId}` : `${dateTime}_${email}`;
       if (existing.has(key)) return;
+      existing.add(key);  // Prevent duplicates within the same batch
 
       const clientName = clientNames.get(email) || '';
       const week = getWeekNumber_(dateTime);
