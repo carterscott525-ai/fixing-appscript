@@ -1745,7 +1745,7 @@ function formatHeader_(sheet, colCount, color) {
 
 function formatDateTimeColumn_(sheet, colNum) {
   if (sheet.getLastRow() > 1) {
-    sheet.getRange(2, colNum, sheet.getMaxRows() - 1, 1)
+    sheet.getRange(2, colNum, sheet.getLastRow() - 1, 1)
       .setNumberFormat('MMM d, yyyy h:mm:ss a');
   }
 }
@@ -1756,8 +1756,10 @@ function addStatusValidation_(sheet, colNum) {
     .setAllowInvalid(false)
     .build();
 
-  if (sheet.getMaxRows() > 1) {
-    sheet.getRange(2, colNum, sheet.getMaxRows() - 1, 1).setDataValidation(rule);
+  // Apply validation to rows 2-1000 to cover current and future data
+  const maxRows = Math.max(sheet.getMaxRows(), 1000);
+  if (maxRows > 1) {
+    sheet.getRange(2, colNum, maxRows - 1, 1).setDataValidation(rule);
   }
 }
 
