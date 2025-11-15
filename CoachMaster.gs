@@ -94,6 +94,14 @@ const WORKOUT_POOL_HEADERS = [
   'Weight', 'Bodyweight', 'Notes', 'Submission ID'
 ];
 
+const PARSED_WORKOUTS_HEADERS = [
+  'Date', 'Email', 'Exercise', 'Set', 'Reps', 'Weight', '1RM', 'Normalized'
+];
+
+const GYM_SCORE_HEADERS = [
+  'Date', 'Email', 'Client BW', 'Total Sets', 'Gym Score', 'Formula'
+];
+
 // ═══════════════════════════════════════════════════════════════════════
 // LABEL SYNONYMS FOR AUTO-DISCOVERY
 // ═══════════════════════════════════════════════════════════════════════
@@ -206,6 +214,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
+    .addItem('Parse All Workout Logs', 'parseAllWorkoutLogs')
     .addToUi();
 }
 
@@ -961,6 +970,267 @@ function loadExerciseDictionary_() {
   });
 
   return dict;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PARSE ALL WORKOUT LOGS (GROUPED FORMAT)
+// ═══════════════════════════════════════════════════════════════════════
+
+function parseAllWorkoutLogs() {
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log('WORKOUT LOG PARSING STARTED');
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Create or get output sheets
+  const parsedSheet = getOrCreateSheet_(ss, 'ParsedWorkouts', PARSED_WORKOUTS_HEADERS, '#FF5722');
+  const scoreSheet = getOrCreateSheet_(ss, 'GymScore', GYM_SCORE_HEADERS, '#9C27B0');
+  const timeline = ss.getSheetByName('Timeline Master');
+
+  let totalRowsParsed = 0;
+  let totalSetsProcessed = 0;
+
+  // Find all workout log sheets
+  const allSheets = ss.getSheets();
+  const workoutLogSheets = allSheets.filter(sheet =>
+    sheet.getName().toLowerCase().includes('workout log')
+  );
+
+  if (workoutLogSheets.length === 0) {
+    Logger.log('⚠️ No "Workout Log" sheets found');
+    SpreadsheetApp.getUi().alert('No sheets found with "Workout Log" in the name');
+    return;
+  }
+
+  Logger.log(`Found ${workoutLogSheets.length} workout log sheet(s)`);
+
+  // Process each workout log sheet
+  workoutLogSheets.forEach(sheet => {
+    Logger.log(`\nProcessing: ${sheet.getName()}`);
+
+    if (sheet.getLastRow() <= 1) {
+      Logger.log('  No data rows, skipping');
+      return;
+    }
+
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const dataRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+
+    // Find date, email, and bodyweight columns
+    const dateCol = findColumn_(headers, ['submission date', 'date', 'timestamp']);
+    const emailCol = findColumn_(headers, EMAIL_LABELS);
+    const bwCol = findColumn_(headers, ['current bodyweight', 'bodyweight', 'body weight', 'bw']);
+
+    if (dateCol === -1 || emailCol === -1 || bwCol === -1) {
+      Logger.log('  ⚠️ Missing required columns (Date, Email, or Bodyweight)');
+      return;
+    }
+
+    // Detect exercise groups
+    const exerciseGroups = detectExerciseGroups_(headers);
+    Logger.log(`  Found ${exerciseGroups.length} exercise(s)`);
+
+    // Process each data row
+    dataRows.forEach((row, rowIdx) => {
+      const date = parseTimestamp(row[dateCol], ss.getSpreadsheetTimeZone());
+      const email = normalizeEmail_(row[emailCol]);
+      const bodyweight = parseFloat(row[bwCol]) || 0;
+
+      if (!date || !email || !bodyweight) {
+        Logger.log(`  ⚠️ Row ${rowIdx + 2}: Missing date, email, or bodyweight`);
+        return;
+      }
+
+      const allSets = [];
+      const exerciseDetails = [];
+
+      // Process each exercise group
+      exerciseGroups.forEach(group => {
+        const setsValue = row[group.setsCol] || '';
+        const repsValue = String(row[group.repsCol] || '');
+        const weightValue = String(row[group.weightCol] || '');
+
+        // Parse comma-separated values
+        const repsList = repsValue.split(',').map(r => parseFloat(r.trim())).filter(r => !isNaN(r));
+        const weightList = weightValue.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w));
+
+        // Determine number of sets
+        let numSets = parseInt(setsValue) || 0;
+        if (numSets === 0 && (repsList.length > 0 || weightList.length > 0)) {
+          numSets = Math.max(repsList.length, weightList.length);
+        }
+        if (numSets === 0) numSets = 1; // Default to 1 set
+
+        // Build sets for this exercise
+        for (let setNum = 1; setNum <= numSets; setNum++) {
+          const reps = repsList[setNum - 1] || 0;
+          const weight = weightList[setNum - 1] || bodyweight; // Use bodyweight if no weight
+
+          // Calculate 1RM using Epley formula: 1RM = weight × (1 + reps / 30)
+          const oneRM = reps > 0 ? weight * (1 + reps / 30) : 0;
+          const normalized = bodyweight > 0 && oneRM > 0 ? oneRM / bodyweight : 0;
+
+          allSets.push({
+            exercise: group.name,
+            setNum: setNum,
+            reps: reps,
+            weight: weight,
+            oneRM: oneRM,
+            normalized: normalized
+          });
+
+          // Add to ParsedWorkouts
+          parsedSheet.appendRow([
+            date,
+            email,
+            group.name,
+            setNum,
+            reps || '',
+            weight || '',
+            oneRM ? oneRM.toFixed(2) : '',
+            normalized ? normalized.toFixed(3) : ''
+          ]);
+
+          totalSetsProcessed++;
+        }
+
+        // Build exercise summary for Timeline
+        const setsSummary = repsList.length > 0 ?
+          `${numSets}x${repsList.join('/')}` :
+          `${numSets} sets`;
+        exerciseDetails.push(`${group.name}: ${setsSummary}`);
+      });
+
+      // Calculate Gym Score
+      const validSets = allSets.filter(s => s.normalized > 0);
+      const gymScore = validSets.length > 0 ?
+        validSets.reduce((sum, s) => sum + s.normalized, 0) / validSets.length :
+        0;
+
+      // Add to GymScore sheet
+      scoreSheet.appendRow([
+        date,
+        email,
+        bodyweight,
+        validSets.length,
+        gymScore ? gymScore.toFixed(2) : '0',
+        'Σ(1RM/BW)/N'
+      ]);
+
+      // Add to Timeline Master
+      if (timeline) {
+        const clientDetails = ss.getSheetByName('Client Details');
+        const clientName = getClientNames_(clientDetails).get(email) || '';
+        const dateObj = parseDate_(date);
+        const week = getWeekNumber_(dateObj);
+        const month = Utilities.formatDate(dateObj, ss.getSpreadsheetTimeZone(), 'MMM yyyy');
+
+        const workoutSummary = exerciseDetails.join('; ');
+        const workoutNotes = `BW: ${bodyweight} lb | Gym Score: ${gymScore.toFixed(2)} | ${validSets.length} total sets`;
+
+        timeline.appendRow([
+          date,                     // DateTime
+          'Workout',                // Type
+          email,                    // Client Email
+          clientName,               // Client Name
+          '',                       // Image URL
+          workoutSummary,           // Details
+          '',                       // Ingredients
+          '',                       // Portions
+          '',                       // Cooking Method
+          '',                       // Meal Timing Category
+          '',                       // Fuel Score
+          '',                       // Recovery Score
+          '',                       // Other Score
+          '',                       // Meal Notes
+          '',                       // Timing Minutes
+          '',                       // Meal Status
+          '',                       // Last Updated
+          workoutSummary,           // Exercises
+          '',                       // Sets/Reps
+          workoutNotes,             // Workout Notes
+          '',                       // Coach Response
+          'Pending Review',         // Response Status
+          week,                     // Week
+          month,                    // Month
+          ''                        // Submission ID
+        ]);
+      }
+
+      totalRowsParsed++;
+    });
+
+    Logger.log(`  ✓ Processed ${dataRows.length} row(s)`);
+  });
+
+  // Format sheets
+  formatDateTimeColumn_(parsedSheet, 1);
+  formatDateTimeColumn_(scoreSheet, 1);
+
+  Logger.log('');
+  Logger.log('═══════════════════════════════════════════════════════════');
+  Logger.log(`WORKOUT LOG PARSING COMPLETE`);
+  Logger.log(`  Total rows parsed: ${totalRowsParsed}`);
+  Logger.log(`  Total sets processed: ${totalSetsProcessed}`);
+  Logger.log('═══════════════════════════════════════════════════════════');
+
+  SpreadsheetApp.getUi().alert(
+    '✓ Workout Parsing Complete',
+    `Processed ${totalRowsParsed} workout submission(s)\n` +
+    `Created ${totalSetsProcessed} set record(s)\n\n` +
+    `Check these sheets:\n` +
+    `• Timeline Master\n` +
+    `• ParsedWorkouts\n` +
+    `• GymScore`,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+/**
+ * Detects exercise groups from headers with format:
+ * - "Exercise Name (Sets)"
+ * - "Exercise Name (Reps,Reps,Reps,Reps)" or "Exercise Name (Reps...)"
+ * - "Exercise Name (Weight,Weight,Weight,Weight)" or "Exercise Name (Weight...)"
+ */
+function detectExerciseGroups_(headers) {
+  const groups = new Map();
+
+  headers.forEach((header, idx) => {
+    const headerStr = String(header).trim();
+
+    // Match patterns like "Exercise Name (Sets)", "Exercise Name (Reps...)", etc.
+    const setsMatch = headerStr.match(/^(.+?)\s*\(sets\)\s*$/i);
+    const repsMatch = headerStr.match(/^(.+?)\s*\(reps[,\s\)]/i);
+    const weightMatch = headerStr.match(/^(.+?)\s*\(weight[,\s\)]/i);
+
+    if (setsMatch) {
+      const exerciseName = setsMatch[1].trim();
+      if (!groups.has(exerciseName)) {
+        groups.set(exerciseName, { name: exerciseName, setsCol: -1, repsCol: -1, weightCol: -1 });
+      }
+      groups.get(exerciseName).setsCol = idx;
+    }
+
+    if (repsMatch) {
+      const exerciseName = repsMatch[1].trim();
+      if (!groups.has(exerciseName)) {
+        groups.set(exerciseName, { name: exerciseName, setsCol: -1, repsCol: -1, weightCol: -1 });
+      }
+      groups.get(exerciseName).repsCol = idx;
+    }
+
+    if (weightMatch) {
+      const exerciseName = weightMatch[1].trim();
+      if (!groups.has(exerciseName)) {
+        groups.set(exerciseName, { name: exerciseName, setsCol: -1, repsCol: -1, weightCol: -1 });
+      }
+      groups.get(exerciseName).weightCol = idx;
+    }
+  });
+
+  // Convert to array and filter valid groups (must have at least reps or weight column)
+  return Array.from(groups.values()).filter(g => g.repsCol !== -1 || g.weightCol !== -1);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
