@@ -207,6 +207,7 @@ function onOpen() {
     .addItem('Run Full Sync', 'runCoachMasterSync')
     .addItem('Run Meal Image Match Now', 'runMealSync')
     .addItem('Calculate Minutes to Workout', 'calculateMinutesToWorkout')
+    .addItem('Calculate Strength Scores', 'calculateStrengthScores')
     .addToUi();
 }
 
@@ -231,18 +232,23 @@ function runCoachMasterSync() {
   Logger.log('\n[STEP 2] Building Timeline Master...');
   buildTimelineMaster(ss);
 
-  // Step 3: Calculate Minutes to Workout
-  Logger.log('\n[STEP 3] Calculating Minutes to Workout...');
+  // Step 3: Calculate Strength Scores
+  Logger.log('\n[STEP 3] Calculating Strength Scores...');
+  const strengthScoresCalculated = calculateStrengthScores();
+  Logger.log(`  Workouts scored: ${strengthScoresCalculated}`);
+
+  // Step 4: Calculate Minutes to Workout
+  Logger.log('\n[STEP 4] Calculating Minutes to Workout...');
   const mealsCalculated = calculateMinutesToWorkout();
   Logger.log(`  Meals calculated: ${mealsCalculated}`);
 
-  // Step 4: Send responses
-  Logger.log('\n[STEP 4] Sending pending responses...');
+  // Step 5: Send responses
+  Logger.log('\n[STEP 5] Sending pending responses...');
   const emailsSent = sendPendingResponses(ss);
   Logger.log(`  Emails sent: ${emailsSent}`);
 
-  // Step 5: Archive old entries
-  Logger.log('\n[STEP 5] Archiving old entries...');
+  // Step 6: Archive old entries
+  Logger.log('\n[STEP 6] Archiving old entries...');
   const archived = archiveOldEntries(ss);
   Logger.log(`  Entries archived: ${archived}`);
 
@@ -1173,6 +1179,111 @@ function buildTimelineMaster(ss) {
   } else {
     Logger.log(`  No new entries to add`);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALCULATE STRENGTH SCORES
+// ═══════════════════════════════════════════════════════════════════════
+
+function calculateStrengthScores() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const timeline = ss.getSheetByName('Timeline Master');
+  const workoutPool = ss.getSheetByName('Workout Pool');
+
+  if (!timeline || timeline.getLastRow() <= 1) {
+    Logger.log('No data in Timeline Master');
+    return 0;
+  }
+
+  if (!workoutPool || workoutPool.getLastRow() <= 1) {
+    Logger.log('No data in Workout Pool');
+    return 0;
+  }
+
+  // Read all Workout Pool data
+  const workoutData = workoutPool.getRange(2, 1, workoutPool.getLastRow() - 1, 9).getValues();
+
+  // Group exercises by Submission ID (or Email+Time if no ID)
+  const workoutGroups = new Map();
+
+  workoutData.forEach(row => {
+    const email = String(row[0] || '').trim(); // Client Email
+    const submissionTime = row[1]; // Submission Time
+    const exercise = String(row[2] || '').trim(); // Exercise
+    const sets = row[3]; // Sets
+    const reps = row[4]; // Reps
+    const weight = row[5]; // Weight
+    const submissionId = String(row[8] || '').trim(); // Submission ID
+
+    // Create unique key for workout
+    const key = submissionId || `${email}_${submissionTime}`;
+
+    if (!workoutGroups.has(key)) {
+      workoutGroups.set(key, {
+        submissionId: submissionId,
+        email: email,
+        submissionTime: submissionTime,
+        exercises: []
+      });
+    }
+
+    // Add exercise to group
+    workoutGroups.get(key).exercises.push({
+      exercise: exercise,
+      sets: sets,
+      reps: reps,
+      weight: weight
+    });
+  });
+
+  // Calculate Epley average for each workout
+  const strengthScores = new Map();
+
+  workoutGroups.forEach((workout, key) => {
+    const epleyScores = [];
+
+    workout.exercises.forEach(ex => {
+      const reps = parseFloat(ex.reps);
+      const weight = parseFloat(ex.weight);
+
+      // Epley Formula: 1RM = weight × (1 + reps/30)
+      if (!isNaN(reps) && !isNaN(weight) && reps > 0 && weight > 0) {
+        const epley1RM = weight * (1 + reps / 30);
+        epleyScores.push(epley1RM);
+      }
+    });
+
+    // Calculate average Epley score
+    if (epleyScores.length > 0) {
+      const avgEpley = epleyScores.reduce((a, b) => a + b, 0) / epleyScores.length;
+      strengthScores.set(workout.submissionId, Math.round(avgEpley * 100) / 100); // Round to 2 decimals
+    } else {
+      strengthScores.set(workout.submissionId, 'NULL');
+    }
+  });
+
+  // Update Timeline Master with Strength Scores
+  const timelineData = timeline.getRange(2, 1, timeline.getLastRow() - 1, 19).getValues();
+  let updatedCount = 0;
+
+  timelineData.forEach((row, index) => {
+    const type = String(row[3] || '').trim(); // Type (column D, index 3)
+
+    if (type === 'Workout') {
+      const submissionId = String(row[18] || '').trim(); // Submission ID (column S, index 18)
+
+      if (submissionId && strengthScores.has(submissionId)) {
+        const score = strengthScores.get(submissionId);
+        timeline.getRange(index + 2, 6).setValue(score); // Strength Score (column F, column 6)
+        if (score !== 'NULL') updatedCount++;
+      } else {
+        timeline.getRange(index + 2, 6).setValue('NULL');
+      }
+    }
+  });
+
+  Logger.log(`Updated ${updatedCount} workout entries with Strength Scores`);
+  return updatedCount;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
