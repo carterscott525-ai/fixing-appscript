@@ -1,20 +1,20 @@
-# Meal Child Script - Timezone Fix V3
+# [[Meal Child Script]] - [[Timezone Fix V3]]
 
-A Google Apps Script that automatically matches meal submission forms with uploaded images from Google Drive, with robust timezone handling for accurate matching.
+A [[Google Apps Script]] that automatically matches [[Meal Submission Forms]] with uploaded images from [[Google Drive]], with robust [[Timezone Handling]] for accurate matching.
 
-## 🔴 V3 CRITICAL UPDATE
+## 🔴 [[V3 Critical Update]]
 
 **Fixed TWO Critical Bugs:**
-1. **Wrong Meal Pairing:** Images were pairing with incorrect meals
-2. **Timestamp Display:** Times showed incorrectly (e.g., 21:34 → 1:34)
+1. **[[Wrong Meal Pairing]]:** Images were pairing with incorrect meals
+2. **[[Timestamp Display Bug]]:** Times showed incorrectly (e.g., 21:34 → 1:34)
 
 **The Issues:**
-1. String timestamps like "2025-11-04 11:43:46" were interpreted in the script's timezone instead of the spreadsheet's timezone, causing time offsets
-2. Formatted strings were written to the sheet instead of Date objects, causing Google Sheets to misinterpret the timezone
+1. [[String Timestamps]] like "2025-11-04 11:43:46" were interpreted in the [[Script Timezone]] instead of the [[Spreadsheet Timezone]], causing [[Time Offsets]]
+2. [[Formatted Strings]] were written to the sheet instead of [[Date Objects]], causing [[Google Sheets]] to misinterpret the timezone
 
 **The Fixes:**
-1. V3 explicitly calculates timezone offset and parses strings in the spreadsheet's timezone
-2. V3 writes Date objects directly (not formatted strings) and sets proper number formatting on the timestamp column
+1. [[V3]] explicitly calculates [[Timezone Offset]] and parses strings in the [[Spreadsheet Timezone]]
+2. [[V3]] writes [[Date Objects]] directly (not [[Formatted Strings]]) and sets proper [[Number Formatting]] on the timestamp column
 
 See [TIMEZONE_FIX_CHANGELOG.md](TIMEZONE_FIX_CHANGELOG.md) for full technical details.
 
@@ -27,12 +27,12 @@ This script solves the problem of matching meal information from Google Forms su
 
 ## ✨ Key Features
 
-- **🕐 Timezone-independent matching** - Uses millisecond timestamps for accurate comparison
-- **📝 Auto-fill from history** - Reuses meal details from previous submissions
-- **🔄 One-to-one matching** - Each image matched to exactly one meal submission
-- **⚠️ Robust error handling** - Continues processing even with invalid data
-- **📊 Detailed logging** - Complete visibility into matching process
-- **🔍 Diagnostic tools** - Built-in testing and validation
+- **🕐 [[Timezone-Independent Matching]]** - Uses [[Millisecond Timestamps]] for accurate comparison
+- **📝 [[Auto-fill from History]]** - Reuses meal details from previous submissions
+- **🔄 [[One-to-One Matching]]** - Each image matched to exactly one meal submission
+- **⚠️ [[Robust Error Handling]]** - Continues processing even with invalid data
+- **📊 [[Detailed Logging]]** - Complete visibility into matching process
+- **🔍 [[Diagnostic Tools]]** - Built-in testing and validation
 
 ## 🚀 Quick Start
 
@@ -40,50 +40,50 @@ This script solves the problem of matching meal information from Google Forms su
 
 ```javascript
 // In Google Apps Script editor
-setupMealChild()
+[[setupMealChild]]()
 ```
 
 This will:
-- Create an hourly trigger for automatic syncing
+- Create an [[Hourly Trigger]] for automatic syncing
 - Validate your configuration
 - Set up the necessary sheets
 
 ### 2. Run Diagnostics
 
 ```javascript
-diagnosticCheck()
+[[diagnosticCheck]]()
 ```
 
 This checks:
-- Timezone settings
+- [[Timezone Settings]]
 - Source data availability
-- Drive folder access
-- Timestamp parsing
-- Coach Master connection
+- [[Drive Folder]] access
+- [[Timestamp Parsing]]
+- [[Coach Master]] connection
 
 ### 3. Manual Sync
 
 ```javascript
-runMealSync()
+[[runMealSync]]()
 ```
 
 This performs:
 - Index meal submissions from forms
-- Scan Drive folder for images
+- Scan [[Drive Folder]] for images
 - Match images to submissions
-- Transfer to Coach Master
+- Transfer to [[Coach Master]]
 
 ## 📋 Configuration
 
 Edit these constants at the top of the script:
 
 ```javascript
-const DRIVE_FOLDER_NAME = 'official image submissions';
-const MEAL_INFO_SOURCE = 'Form responses';
-const MEAL_DESTINATION = 'Meal Image+Info';
-const COACH_MASTER_ID = '10isGpEx75IcGMZTNgkkkx2Cs2toFqYhWXQeMmpjQsAQ';
-const COACH_MEAL_POOL = 'Meal Pool';
-const MATCH_WINDOW_MINUTES = 1440; // 24 hours
+const [[DRIVE_FOLDER_NAME]] = 'official image submissions';
+const [[MEAL_INFO_SOURCE]] = 'Form responses';
+const [[MEAL_DESTINATION]] = 'Meal Image+Info';
+const [[COACH_MASTER_ID]] = '10isGpEx75IcGMZTNgkkkx2Cs2toFqYhWXQeMmpjQsAQ';
+const [[COACH_MEAL_POOL]] = 'Meal Pool';
+const [[MATCH_WINDOW_MINUTES]] = 1440; // 24 hours
 ```
 
 ## 🔧 What's Fixed in V3
@@ -126,60 +126,60 @@ See [TIMEZONE_FIX_CHANGELOG.md](TIMEZONE_FIX_CHANGELOG.md) for full technical de
 
 ## 📊 How It Works
 
-### Step 1: Build Meal Index
-- Reads form submissions from "Form responses" sheet
-- Parses timestamps using robust parser
-- Normalizes to millisecond timestamps
-- Auto-fills missing data from history
+### Step 1: [[Build Meal Index]]
+- Reads form submissions from "[[Form Responses]]" sheet
+- Parses timestamps using [[Robust Parser]]
+- Normalizes to [[Millisecond Timestamps]]
+- [[Auto-fills]] missing data from history
 - Sorts by submission time
 
-### Step 2: Scan Drive and Match
-- Scans client folders in Drive
-- Extracts file modification times
-- Finds nearest unused meal within 24-hour window
-- Uses timezone-independent comparison
+### Step 2: [[Scan Drive and Match]]
+- Scans client folders in [[Drive]]
+- Extracts [[File Modification Times]]
+- Finds nearest unused meal within [[24-Hour Window]]
+- Uses [[Timezone-Independent Comparison]]
 - Creates matched rows
 
-### Step 3: Transfer to Coach Master
-- Sends matched meals to Coach Master spreadsheet
-- Deduplicates based on email + time + meal name
-- Preserves all meal details and image URLs
+### Step 3: [[Transfer to Coach Master]]
+- Sends matched meals to [[Coach Master]] spreadsheet
+- [[Deduplicates]] based on email + time + meal name
+- Preserves all meal details and [[Image URLs]]
 
-## 🔍 Understanding Timezone Handling
+## 🔍 Understanding [[Timezone Handling]]
 
 ### The Problem:
 ```
-Form submission: "2025-11-04 11:43:46" (which timezone?)
-File upload:     "2025-11-04 16:43:46 UTC"
+[[Form Submission]]: "2025-11-04 11:43:46" (which timezone?)
+[[File Upload]]:     "2025-11-04 16:43:46 UTC"
 Are these 24 hours apart or 0 hours apart?
 ```
 
 ### The Solution:
 ```javascript
-// Both converted to milliseconds since epoch
+// Both converted to [[Milliseconds Since Epoch]]
 formTime:  1699103026000  (absolute point in time)
 fileTime:  1699103026000  (absolute point in time)
 diff = |formTime - fileTime| = 0 ms ✅
 ```
 
 ### Key Insight:
-- **Display times** can differ by timezone
-- **Millisecond timestamps** are universal
-- Comparison uses milliseconds = timezone-independent
+- **[[Display Times]]** can differ by timezone
+- **[[Millisecond Timestamps]]** are universal
+- Comparison uses milliseconds = [[Timezone-Independent]]
 
 ## 📝 Required Sheet Columns
 
-### Form Responses Sheet:
-- Email (required)
-- Meal Name (required)
-- Timestamp (required)
-- Core Ingredients (optional, auto-filled)
-- Added Ingredients (optional, auto-filled)
-- Cooking Method (optional, auto-filled)
-- Portions (optional, auto-filled)
-- Submission ID (optional)
+### [[Form Responses]] Sheet:
+- [[Email]] (required)
+- [[Meal Name]] (required)
+- [[Timestamp]] (required)
+- [[Core Ingredients]] (optional, auto-filled)
+- [[Added Ingredients]] (optional, auto-filled)
+- [[Cooking Method]] (optional, auto-filled)
+- [[Portions]] (optional, auto-filled)
+- [[Submission ID]] (optional)
 
-### Drive Folder Structure:
+### [[Drive Folder Structure]]:
 ```
 official image submissions/
   ├── client1@example.com/

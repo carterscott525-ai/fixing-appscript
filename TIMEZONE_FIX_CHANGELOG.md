@@ -1,44 +1,44 @@
-# Meal Child Script - Timezone Fix V3 Changelog
+# [[Meal Child Script]] - [[Timezone Fix V3]] Changelog
 
 ## Overview
-This document outlines all fixes applied to the Meal Child Script to properly handle timezones when matching Google Form submissions with Google Drive images.
+This document outlines all fixes applied to the [[Meal Child Script]] to properly handle timezones when matching [[Google Form Submissions]] with [[Google Drive]] images.
 
-## 🔴 CRITICAL UPDATE V3 (Latest)
+## 🔴 [[Critical Update V3]] (Latest)
 
 **Issues Found:**
-1. V2 had a timezone parsing bug that caused images to pair with the wrong meals
-2. Timestamps displayed incorrectly (e.g., 21:34 → 1:34) in the output sheet
+1. [[V2]] had a [[Timezone Parsing Bug]] that caused images to pair with the wrong meals
+2. [[Timestamps]] displayed incorrectly (e.g., 21:34 → 1:34) in the output sheet
 
 **Root Causes:**
-1. **Parsing Bug:** String timestamps like "2025-11-04 11:43:46" were converted to ISO format and passed to `new Date()`. JavaScript interpreted the time in the **script's timezone** instead of the **spreadsheet's timezone**, leading to time offsets (e.g., 5 hours if script is in UTC but spreadsheet is in EST).
+1. **[[Parsing Bug]]:** [[String Timestamps]] like "2025-11-04 11:43:46" were converted to [[ISO Format]] and passed to `new Date()`. [[JavaScript]] interpreted the time in the **[[Script Timezone]]** instead of the **[[Spreadsheet Timezone]]**, leading to [[Time Offsets]] (e.g., 5 hours if script is in UTC but spreadsheet is in EST).
 
-2. **Display Bug:** The script wrote formatted STRING timestamps to the sheet instead of Date objects. When Google Sheets tried to interpret these strings, it could parse them in the wrong timezone, causing 21:34 to display as 1:34.
+2. **[[Display Bug]]:** The script wrote formatted STRING timestamps to the sheet instead of [[Date Objects]]. When [[Google Sheets]] tried to interpret these strings, it could parse them in the wrong timezone, causing 21:34 to display as 1:34.
 
 **The Fixes:**
-1. **Parsing:** Updated `parseTimestamp()` to calculate the timezone offset between script and spreadsheet timezones, then explicitly parse strings in the spreadsheet's timezone.
+1. **[[Parsing]]:** Updated `[[parseTimestamp]]()` to calculate the [[Timezone Offset]] between script and spreadsheet timezones, then explicitly parse strings in the [[Spreadsheet Timezone]].
 
-2. **Display:** Changed `createMealRow()` to write Date objects directly instead of formatted strings, and added proper number formatting to the timestamp column.
+2. **[[Display]]:** Changed `[[createMealRow]]()` to write [[Date Objects]] directly instead of [[Formatted Strings]], and added proper [[Number Formatting]] to the timestamp column.
 
 ---
 
 ## Critical Fixes
 
-### 1. Robust Timestamp Parsing Function (`parseTimestamp`) - V3 FIX
+### 1. [[Robust Timestamp Parsing Function]] (`[[parseTimestamp]]`) - [[V3 Fix]]
 **Location:** Lines 74-160
 
-**Problem (V2 Bug):**
-- V2 code converted "2025-11-04 11:43:46" to ISO format "2025-11-04T11:43:46"
-- `new Date("2025-11-04T11:43:46")` interprets this in the **script's LOCAL timezone**
-- But the string is actually in the **spreadsheet's timezone**
-- Result: Time offset equal to timezone difference (e.g., 5 hours if EST vs UTC)
-- **This caused images to match with the wrong meals!**
+**Problem ([[V2 Bug]]):**
+- [[V2]] code converted "2025-11-04 11:43:46" to [[ISO Format]] "2025-11-04T11:43:46"
+- `new Date("2025-11-04T11:43:46")` interprets this in the **[[Script Local Timezone]]**
+- But the string is actually in the **[[Spreadsheet Timezone]]**
+- Result: [[Time Offset]] equal to timezone difference (e.g., 5 hours if EST vs UTC)
+- **This caused images to match with the [[Wrong Meals]]!**
 
-**Solution (V3):**
+**Solution ([[V3]]):**
 ```javascript
-function parseTimestamp(value, spreadsheetTZ) {
+function [[parseTimestamp]](value, spreadsheetTZ) {
   // For string format "2025-11-04 11:43:46":
 
-  // 1. Calculate timezone offset between script and spreadsheet
+  // 1. Calculate [[Timezone Offset]] between script and spreadsheet
   const testDate = new Date('2025-01-15T12:00:00Z');
   const testFormatted = Utilities.formatDate(testDate, spreadsheetTZ, 'yyyy-MM-dd HH:mm:ss');
   const testParsedLocal = new Date(testFormatted.replace(' ', 'T'));
@@ -55,63 +55,63 @@ function parseTimestamp(value, spreadsheetTZ) {
 ```
 
 **Benefits:**
-- Correctly interprets strings in spreadsheet's timezone
+- Correctly interprets strings in [[Spreadsheet Timezone]]
 - Handles timezone differences between script and spreadsheet
-- Prevents time offsets that cause wrong meal matching
-- All calls now pass spreadsheetTZ parameter
+- Prevents [[Time Offsets]] that cause [[Wrong Meal Matching]]
+- All calls now pass [[spreadsheetTZ Parameter]]
 
 ---
 
-### 2. Fix Timestamp Display (Write Date Objects, Not Strings) - V3 FIX
+### 2. [[Fix Timestamp Display]] (Write [[Date Objects]], Not Strings) - [[V3 Fix]]
 **Location:** Lines 678-694
 
-**Problem (Caused 21:34 → 1:34 Display Bug):**
-- V2 code called `formatDateForDisplay()` to convert Date to string
+**Problem (Caused [[21:34 → 1:34 Display Bug]]):**
+- [[V2]] code called `[[formatDateForDisplay]]()` to convert Date to string
 - String like "Nov 4, 2025 9:34 PM" was written to sheet
-- Google Sheets tried to parse this string and interpreted it incorrectly
-- Result: 21:34 displayed as 1:34 (timezone confusion)
+- [[Google Sheets]] tried to parse this string and interpreted it incorrectly
+- Result: 21:34 displayed as 1:34 ([[Timezone Confusion]])
 
-**Solution (V3):**
+**Solution ([[V3]]):**
 ```javascript
-function createMealRow(email, imageUrl, fileTime, match) {
+function [[createMealRow]](email, imageUrl, fileTime, match) {
   const submissionTime = match ? match.submissionTime : fileTime;
 
-  // CRITICAL FIX: Write the Date object directly, not a formatted string
+  // CRITICAL FIX: Write the [[Date Object]] directly, not a [[Formatted String]]
   return [
     email,
     imageUrl,
-    submissionTime,  // Date object, not string!
+    submissionTime,  // [[Date Object]], not string!
     ...
   ];
 }
 ```
 
-**Also Added Column Formatting:**
+**Also Added [[Column Formatting]]:**
 ```javascript
-// In getOrCreateSheet()
+// In [[getOrCreateSheet]]()
 sheet.getRange(2, 3, sheet.getLastRow() - 1, 1)
   .setNumberFormat('MMM d, yyyy h:mm:ss a');
 ```
 
 **Benefits:**
-- Date objects preserve timezone information correctly
-- Google Sheets displays them in the spreadsheet's timezone
-- No more string parsing ambiguity
+- [[Date Objects]] preserve timezone information correctly
+- [[Google Sheets]] displays them in the [[Spreadsheet Timezone]]
+- No more [[String Parsing Ambiguity]]
 - Consistent display: 21:34 stays 21:34
-- Number format ensures proper date/time display
+- [[Number Format]] ensures proper date/time display
 
 ---
 
-### 3. Timezone Validation and Warnings
+### 3. [[Timezone Validation]] and Warnings
 **Location:** Lines 53-75
 
 **Problem:**
-- No warning when spreadsheet and script timezones differ
-- Silent fallback to script timezone could mask configuration issues
+- No warning when [[Spreadsheet Timezone]] and [[Script Timezone]] differ
+- Silent fallback to [[Script Timezone]] could mask configuration issues
 
 **Solution:**
 ```javascript
-function getTimezones() {
+function [[getTimezones]]() {
   // ...
 
   // Warn if timezones differ
@@ -123,37 +123,37 @@ function getTimezones() {
 ```
 
 **Benefits:**
-- Users are alerted to potential timezone mismatches
+- Users are alerted to potential [[Timezone Mismatches]]
 - Easier debugging when issues arise
 - Better transparency in operation
 
 ---
 
-### 4. Proper Use of `normalizeToSpreadsheetTime`
+### 4. Proper Use of `[[normalizeToSpreadsheetTime]]`
 **Location:** Lines 130-140
 
 **Problem:**
 - Function was defined but never used
-- Timestamps weren't being normalized to milliseconds consistently
+- [[Timestamps]] weren't being normalized to [[Milliseconds]] consistently
 
 **Solution:**
 ```javascript
-function normalizeToSpreadsheetTime(date) {
+function [[normalizeToSpreadsheetTime]](date) {
   if (!(date instanceof Date) || isNaN(date.getTime())) {
     return null;
   }
-  return date.getTime(); // Returns timezone-independent milliseconds
+  return date.getTime(); // Returns [[Timezone-Independent Milliseconds]]
 }
 ```
 
 **Now Used In:**
-- `buildMealIndex()` - Line 380
-- `scanDriveAndMatch()` - Line 596
-- `findNearestUnusedMeal()` - Line 679
+- `[[buildMealIndex]]()` - Line 380
+- `[[scanDriveAndMatch]]()` - Line 596
+- `[[findNearestUnusedMeal]]()` - Line 679
 
 **Benefits:**
-- All comparisons use timezone-independent millisecond timestamps
-- Consistent behavior regardless of timezone settings
+- All comparisons use [[Timezone-Independent Millisecond Timestamps]]
+- Consistent behavior regardless of [[Timezone Settings]]
 - Null checks prevent errors from invalid dates
 
 ---
@@ -237,43 +237,43 @@ Logger.log(`📚 Meal history: ${history.size} unique meals loaded`);
 
 ---
 
-## Technical Details
+## [[Technical Details]]
 
-### How Timezone-Independent Comparison Works
+### How [[Timezone-Independent Comparison]] Works
 
-1. **Form Submission Time:**
+1. **[[Form Submission Time]]:**
    ```javascript
-   const submissionTime = parseTimestamp(timeValue);  // Parse to Date object
-   const submissionTimeMs = normalizeToSpreadsheetTime(submissionTime);  // Convert to ms
+   const submissionTime = [[parseTimestamp]](timeValue);  // Parse to [[Date Object]]
+   const submissionTimeMs = [[normalizeToSpreadsheetTime]](submissionTime);  // Convert to ms
    ```
 
-2. **Drive File Time:**
+2. **[[Drive File Time]]:**
    ```javascript
    const fileTime = file.getLastUpdated();  // Gets Date in UTC
-   const fileTimeMs = normalizeToSpreadsheetTime(fileTime);  // Convert to ms
+   const fileTimeMs = [[normalizeToSpreadsheetTime]](fileTime);  // Convert to ms
    ```
 
-3. **Comparison:**
+3. **[[Comparison]]:**
    ```javascript
    const diff = Math.abs(meal.submissionTimeMs - fileTimeMs);  // Pure numeric comparison
    ```
 
 4. **Result:**
-   - Both timestamps are in milliseconds since epoch
-   - This is timezone-independent
-   - Comparison is accurate regardless of timezone settings
+   - Both timestamps are in [[Milliseconds Since Epoch]]
+   - This is [[Timezone-Independent]]
+   - Comparison is accurate regardless of [[Timezone Settings]]
 
 ### Why This Approach Works
 
-**Milliseconds since epoch (Unix timestamp):**
-- Represents an absolute point in time
+**[[Milliseconds Since Epoch]] ([[Unix Timestamp]]):**
+- Represents an [[Absolute Point in Time]]
 - Not affected by timezone
 - `2025-11-04 11:43:46 EST` and `2025-11-04 16:43:46 UTC` have the same millisecond value
-- Perfect for time difference calculations
+- Perfect for [[Time Difference Calculations]]
 
-**Display vs Comparison:**
-- **Display:** Use `formatDateForDisplay()` with timezone for human-readable output
-- **Comparison:** Use millisecond timestamps for accuracy
+**[[Display vs Comparison]]:**
+- **[[Display]]:** Use `[[formatDateForDisplay]]()` with timezone for human-readable output
+- **[[Comparison]]:** Use [[Millisecond Timestamps]] for accuracy
 
 ---
 
